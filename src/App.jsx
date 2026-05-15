@@ -17,6 +17,7 @@ function App() {
   const [editingStock, setEditingStock] = useState(null)
   const [deletingStock, setDeletingStock] = useState(null)
   const [selectedStockName, setSelectedStockName] = useState('all')
+  const [selectedStatus, setSelectedStatus] = useState('all')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSavingStock, setIsSavingStock] = useState(false)
   const [isDeletingStock, setIsDeletingStock] = useState(false)
@@ -34,17 +35,19 @@ function App() {
   }, [computedStocks])
 
   const filteredStocks = useMemo(() => {
-    if (selectedStockName === 'all') {
-      return computedStocks
-    }
+    return computedStocks.filter((stock) => {
+      const matchesStockName =
+        selectedStockName === 'all' || stock.stockName === selectedStockName
+      const matchesStatus = selectedStatus === 'all' || stock.status === selectedStatus
 
-    return computedStocks.filter((stock) => stock.stockName === selectedStockName)
-  }, [computedStocks, selectedStockName])
+      return matchesStockName && matchesStatus
+    })
+  }, [computedStocks, selectedStatus, selectedStockName])
 
   const summary = useMemo(() => {
     return filteredStocks.reduce(
       (accumulator, stock) => {
-        accumulator.totalStocks += 1
+        accumulator.totalStocks += Number(stock.quantity) || 0
         accumulator.totalInvestment += stock.includingCommission * stock.quantity
         accumulator.totalProfitLoss += stock.amount
         return accumulator
@@ -57,7 +60,12 @@ function App() {
     )
   }, [filteredStocks])
 
-  const activeFilterLabel = selectedStockName === 'all' ? 'All Stocks' : selectedStockName
+  const activeStockLabel = selectedStockName === 'all' ? 'All Stocks' : selectedStockName
+  const activeStatusLabel =
+    selectedStatus === 'all'
+      ? 'All Statuses'
+      : STATUS_OPTIONS.find((status) => status.value === selectedStatus)?.label ?? 'All Statuses'
+  const activeFilterLabel = `${activeStockLabel} • ${activeStatusLabel}`
 
   const handleAddStock = async (values) => {
     setActionError('')
@@ -145,6 +153,7 @@ function App() {
       setEditingStock(null)
       setDeletingStock(null)
       setSelectedStockName('all')
+      setSelectedStatus('all')
     } catch (error) {
       console.error('Failed to sign out.', error)
       setActionError('We could not sign you out right now. Please try again.')
@@ -243,13 +252,30 @@ function App() {
               </div>
               <div className="flex flex-col gap-3 sm:items-end">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatus('all')}
+                    className={`rounded-full border px-3 py-1.5 uppercase tracking-wide transition ${
+                      selectedStatus === 'all'
+                        ? 'border-sky-400/40 bg-sky-400/15 text-sky-200'
+                        : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200'
+                    }`}
+                  >
+                    All
+                  </button>
                   {STATUS_OPTIONS.map((status) => (
-                    <span
+                    <button
+                      type="button"
                       key={status.value}
-                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 uppercase tracking-wide"
+                      onClick={() => setSelectedStatus(status.value)}
+                      className={`rounded-full border px-3 py-1.5 uppercase tracking-wide transition ${
+                        selectedStatus === status.value
+                          ? 'border-sky-400/40 bg-sky-400/15 text-sky-200'
+                          : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200'
+                      }`}
                     >
                       {status.label}
-                    </span>
+                    </button>
                   ))}
                 </div>
 

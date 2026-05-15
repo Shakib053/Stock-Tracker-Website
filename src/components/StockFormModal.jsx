@@ -50,19 +50,27 @@ function StockFormModal({
     event.preventDefault()
 
     const nextErrors = {}
-    const buyingPrice = Number(formValues.buyingPrice)
-    const quantity = Number(formValues.quantity)
-    const soldPrice = Number(formValues.soldPrice)
+    const trimmedStockName = formValues.stockName.trim()
+    const trimmedBuyingPrice = formValues.buyingPrice.trim()
+    const trimmedQuantity = formValues.quantity.trim()
+    const trimmedSoldPrice = formValues.soldPrice.trim()
+    const buyingPrice = Number(trimmedBuyingPrice)
+    const quantity = Number(trimmedQuantity)
+    const soldPrice = trimmedSoldPrice === '' ? 0 : Number(trimmedSoldPrice)
 
-    if (!formValues.stockName.trim()) {
+    if (!trimmedStockName) {
       nextErrors.stockName = 'Stock name is required.'
     }
 
-    if (Number.isNaN(buyingPrice) || buyingPrice < 0) {
+    if (!trimmedBuyingPrice) {
+      nextErrors.buyingPrice = 'Buying price is required.'
+    } else if (Number.isNaN(buyingPrice) || buyingPrice < 0) {
       nextErrors.buyingPrice = 'Buying price must be a non-negative number.'
     }
 
-    if (Number.isNaN(quantity) || quantity <= 0) {
+    if (!trimmedQuantity) {
+      nextErrors.quantity = 'Quantity is required.'
+    } else if (Number.isNaN(quantity) || quantity <= 0) {
       nextErrors.quantity = 'Quantity must be greater than zero.'
     }
 
@@ -80,7 +88,7 @@ function StockFormModal({
     }
 
     onSubmit({
-      stockName: formValues.stockName.trim(),
+      stockName: trimmedStockName,
       buyingPrice,
       quantity,
       soldPrice,
@@ -126,6 +134,7 @@ function StockFormModal({
             onChange={handleChange}
             disabled={isSubmitting}
             placeholder="Example: AAPL"
+            required
             error={errors.stockName}
           />
 
@@ -161,6 +170,7 @@ function StockFormModal({
             onChange={handleChange}
             disabled={isSubmitting}
             placeholder="0.000"
+            required
             error={errors.buyingPrice}
           />
 
@@ -175,6 +185,7 @@ function StockFormModal({
             onChange={handleChange}
             disabled={isSubmitting}
             placeholder="0"
+            required
             error={errors.quantity}
           />
 
@@ -213,11 +224,12 @@ function StockFormModal({
   )
 }
 
-function FormField({ label, error, ...inputProps }) {
+function FormField({ label, error, required = false, ...inputProps }) {
   return (
     <div>
       <label className="field-label" htmlFor={inputProps.name}>
         {label}
+        {required ? <span className="ml-1 text-danger">*</span> : null}
       </label>
       <input id={inputProps.name} className="field-input" {...inputProps} />
       {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}

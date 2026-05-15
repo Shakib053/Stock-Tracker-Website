@@ -7,8 +7,6 @@ export function formatCurrency(value, fractionDigits = 2) {
     currencyFormatterCache.set(
       key,
       new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
         minimumFractionDigits: fractionDigits,
         maximumFractionDigits: fractionDigits,
       }),
