@@ -72,6 +72,24 @@ export function useStocks(user) {
     })
   }
 
+  const updateStockQuotes = async (quoteUpdates) => {
+    if (!canAccessStocks || quoteUpdates.length === 0) {
+      return
+    }
+
+    const updatedAt = new Date().toISOString()
+
+    await Promise.all(
+      quoteUpdates.map(({ stockId, lastQuote }) =>
+        updateDoc(doc(getUserStocksCollection(user.uid), stockId), {
+          lastQuote,
+          quoteUpdatedAt: updatedAt,
+          updatedAt,
+        }),
+      ),
+    )
+  }
+
   const deleteStock = async (stockId) => {
     if (!canAccessStocks) {
       throw new Error('Firebase is not configured for this deployment yet.')
@@ -87,6 +105,7 @@ export function useStocks(user) {
     error,
     addStock,
     updateStock,
+    updateStockQuotes,
     deleteStock,
   }
 }

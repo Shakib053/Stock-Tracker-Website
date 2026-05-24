@@ -24,6 +24,7 @@ function StockFormModal({
 
     setFormValues({
       stockName: initialValues.stockName ?? '',
+      symbol: initialValues.symbol ?? '',
       buyingPrice: String(initialValues.buyingPrice ?? ''),
       quantity: String(initialValues.quantity ?? ''),
       soldPrice: String(initialValues.soldPrice ?? ''),
@@ -89,6 +90,7 @@ function StockFormModal({
 
     onSubmit({
       stockName: trimmedStockName,
+      symbol: formValues.symbol.trim().toUpperCase(),
       buyingPrice,
       quantity,
       soldPrice,
@@ -133,10 +135,24 @@ function StockFormModal({
             value={formValues.stockName}
             onChange={handleChange}
             disabled={isSubmitting}
-            placeholder="Example: AAPL"
+            placeholder="Example: Grameenphone"
             required
             error={errors.stockName}
           />
+
+          <FormField
+            label="DSE Trading Code"
+            name="symbol"
+            value={formValues.symbol}
+            onChange={handleChange}
+            disabled={isSubmitting}
+            placeholder="Example: GP"
+            error={errors.symbol}
+          />
+          <p className="-mt-3 text-xs leading-5 text-slate-400 sm:col-span-2">
+            Required for live market value. Use the exact DSE code from dsebd.org (e.g. GP, BRACBANK,
+            SQURPHARMA).
+          </p>
 
           <div>
             <label className="field-label" htmlFor="status">

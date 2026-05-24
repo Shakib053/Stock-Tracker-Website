@@ -26,12 +26,17 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
             <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-400">
               {[
                 'Stock Name',
+                'Symbol',
+                'LTP',
+                'Day Change',
+                'Market Value',
                 'Buying Price',
                 'Including Commission',
                 'Min Selling Price',
                 'Quantity',
                 'Sold Price',
                 'Profit %',
+                'Unrealized P/L',
                 'Status',
                 'Amount',
                 'Actions',
@@ -46,6 +51,24 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
             {stocks.map((stock) => (
               <tr key={stock.id} className="text-sm text-slate-200">
                 <td className="px-4 py-4 font-semibold text-white">{stock.stockName}</td>
+                <td className="px-4 py-4">
+                  {stock.symbol ? (
+                    <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-1 text-xs font-semibold uppercase text-sky-200">
+                      {stock.symbol}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-4">
+                  <LivePrice value={stock.ltp} source={stock.quoteSource} symbol={stock.symbol} />
+                </td>
+                <td className={`px-4 py-4 font-semibold ${getAmountTone(stock.dayChange)}`}>
+                  {stock.dayChange == null ? '—' : formatCurrency(stock.dayChange, 2)}
+                </td>
+                <td className="px-4 py-4 font-semibold text-white">
+                  {stock.marketValue == null ? '—' : formatCurrency(stock.marketValue, 0)}
+                </td>
                 <td className="px-4 py-4">{formatCurrency(stock.buyingPrice, 3)}</td>
                 <td className="px-4 py-4">{formatCurrency(stock.includingCommission, 3)}</td>
                 <td className="px-4 py-4">{formatCurrency(stock.minSellingPrice, 3)}</td>
@@ -53,6 +76,9 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
                 <td className="px-4 py-4">{formatCurrency(stock.soldPrice, 3)}</td>
                 <td className={`px-4 py-4 font-semibold ${getAmountTone(stock.profitPercent)}`}>
                   {formatPercent(stock.profitPercent)}
+                </td>
+                <td className={`px-4 py-4 font-semibold ${getAmountTone(stock.unrealizedGain)}`}>
+                  {stock.unrealizedGain == null ? '—' : formatCurrency(stock.unrealizedGain, 0)}
                 </td>
                 <td className="px-4 py-4">
                   <StatusBadge status={stock.status} />
@@ -74,7 +100,14 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
           <article key={stock.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">{stock.stockName}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-lg font-semibold text-white">{stock.stockName}</h3>
+                  {stock.symbol ? (
+                    <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs font-semibold uppercase text-sky-200">
+                      {stock.symbol}
+                    </span>
+                  ) : null}
+                </div>
                 <p className="mt-1 text-sm text-slate-400">
                   Qty {formatNumber(stock.quantity)} • Sold {formatCurrency(stock.soldPrice, 3)}
                 </p>
@@ -83,6 +116,19 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <MobileMetric
+                label="LTP"
+                value={stock.ltp == null ? '—' : formatCurrency(stock.ltp, 2)}
+              />
+              <MobileMetric
+                label="Day Change"
+                value={stock.dayChange == null ? '—' : formatCurrency(stock.dayChange, 2)}
+                tone={getAmountTone(stock.dayChange)}
+              />
+              <MobileMetric
+                label="Market Value"
+                value={stock.marketValue == null ? '—' : formatCurrency(stock.marketValue, 0)}
+              />
               <MobileMetric label="Buying Price" value={formatCurrency(stock.buyingPrice, 3)} />
               <MobileMetric
                 label="Incl. Commission"
@@ -93,6 +139,11 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
                 value={formatCurrency(stock.minSellingPrice, 3)}
               />
               <MobileMetric label="Profit %" value={formatPercent(stock.profitPercent)} />
+              <MobileMetric
+                label="Unrealized P/L"
+                value={stock.unrealizedGain == null ? '—' : formatCurrency(stock.unrealizedGain, 0)}
+                tone={getAmountTone(stock.unrealizedGain)}
+              />
               <MobileMetric
                 label="Amount"
                 value={formatCurrency(stock.amount, 0)}
@@ -120,6 +171,35 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
         ))}
       </div>
     </>
+  )
+}
+
+function LivePrice({ value, source, symbol }) {
+  if (!symbol) {
+    return (
+      <div>
+        <span className="text-slate-500">—</span>
+        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">Add DSE code</p>
+      </div>
+    )
+  }
+
+  if (value == null) {
+    return (
+      <div>
+        <span className="text-slate-500">—</span>
+        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">No match for {symbol}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="font-semibold text-white">{formatCurrency(value, 2)}</p>
+      {source === 'cached' ? (
+        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">Cached</p>
+      ) : null}
+    </div>
   )
 }
 
