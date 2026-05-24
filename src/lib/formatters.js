@@ -24,6 +24,18 @@ export function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(Number(value) || 0)
 }
 
+export function formatDateTime(value) {
+  if (!value) {
+    return '—'
+  }
+
+  return new Intl.DateTimeFormat('en-BD', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Dhaka',
+  }).format(new Date(value))
+}
+
 export function getAmountTone(value) {
   const numericValue = Number(value) || 0
 

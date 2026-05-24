@@ -1,5 +1,6 @@
 export const DEFAULT_FORM_VALUES = {
   stockName: '',
+  symbol: '',
   buyingPrice: '',
   quantity: '',
   soldPrice: '',

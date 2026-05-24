@@ -1,18 +1,44 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import AuthScreen from './components/AuthScreen'
 import DeleteConfirmModal from './components/DeleteConfirmModal'
+import DseQuoteStatus from './components/DseQuoteStatus'
 import StockFormModal from './components/StockFormModal'
 import StockTable from './components/StockTable'
 import SummaryCards from './components/SummaryCards'
 import { DEFAULT_FORM_VALUES, STATUS_OPTIONS } from './lib/constants'
 import { missingFirebaseConfig } from './lib/firebase'
-import { calculateDerivedValues, createStockPayload, normalizeStockValues } from './lib/stockMath'
+import {
+  calculateDerivedValues,
+  createStockPayload,
+  enrichStockWithQuote,
+  normalizeStockValues,
+  normalizeSymbol,
+} from './lib/stockMath'
 import { useAuth } from './hooks/useAuth'
+import { useDseQuotes } from './hooks/useDseQuotes'
 import { useStocks } from './hooks/useStocks'
 
 function App() {
   const { user, status: authStatus, error: authError, signIn, logOut, isConfigured } = useAuth()
-  const { stocks, status: stocksStatus, error: stocksError, addStock, updateStock, deleteStock } = useStocks(user)
+  const {
+    stocks,
+    status: stocksStatus,
+    error: stocksError,
+    addStock,
+    updateStock,
+    updateStockQuotes,
+    deleteStock,
+  } = useStocks(user)
+  const {
+    quotes,
+    status: dseStatus,
+    error: dseError,
+    lastUpdated: dseLastUpdated,
+    isStale: isDseStale,
+    marketOpen,
+    refresh: refreshDseQuotes,
+  } = useDseQuotes({ enabled: authStatus === 'signed_in' })
+  const lastPersistedQuoteFetchRef = useRef(null)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingStock, setEditingStock] = useState(null)
   const [deletingStock, setDeletingStock] = useState(null)
@@ -23,10 +49,43 @@ function App() {
   const [isDeletingStock, setIsDeletingStock] = useState(false)
   const [actionError, setActionError] = useState('')
 
+  const quoteCount = useMemo(() => Object.keys(quotes).length, [quotes])
+
   const computedStocks = useMemo(
-    () => stocks.map((stock) => ({ ...stock, ...calculateDerivedValues(stock) })),
-    [stocks],
+    () =>
+      stocks.map((stock) => ({
+        ...stock,
+        ...calculateDerivedValues(stock),
+        ...enrichStockWithQuote(stock, quotes),
+      })),
+    [quotes, stocks],
   )
+
+  useEffect(() => {
+    if (!dseLastUpdated || dseLastUpdated === lastPersistedQuoteFetchRef.current || dseStatus === 'error') {
+      return
+    }
+
+    const quoteUpdates = stocks
+      .map((stock) => ({ ...stock, symbol: normalizeSymbol(stock.symbol) }))
+      .filter((stock) => stock.symbol && quotes[stock.symbol]?.ltp != null)
+      .filter((stock) => quotes[stock.symbol].ltp !== stock.lastQuote)
+      .map((stock) => ({
+        stockId: stock.id,
+        lastQuote: quotes[stock.symbol].ltp,
+      }))
+
+    if (quoteUpdates.length === 0) {
+      lastPersistedQuoteFetchRef.current = dseLastUpdated
+      return
+    }
+
+    lastPersistedQuoteFetchRef.current = dseLastUpdated
+
+    updateStockQuotes(quoteUpdates).catch((error) => {
+      console.error('Failed to persist cached DSE quotes.', error)
+    })
+  }, [dseLastUpdated, dseStatus, quotes, stocks, updateStockQuotes])
 
   const stockFilterOptions = useMemo(() => {
     return Array.from(new Set(computedStocks.map((stock) => stock.stockName))).sort((left, right) =>
@@ -50,15 +109,56 @@ function App() {
         accumulator.totalStocks += Number(stock.quantity) || 0
         accumulator.totalInvestment += stock.includingCommission * stock.quantity
         accumulator.totalProfitLoss += stock.amount
+
+        if (stock.status === 'holding' && stock.marketValue != null) {
+          accumulator.totalMarketValue += stock.marketValue
+        }
+
+        if (stock.status === 'holding' && stock.unrealizedGain != null) {
+          accumulator.totalUnrealizedGain += stock.unrealizedGain
+        }
+
+        if (stock.status === 'holding' && stock.symbol && stock.ltp != null) {
+          accumulator.livePricedHoldings += 1
+        }
+
+        if (stock.status === 'holding' && stock.symbol && stock.ltp == null) {
+          accumulator.missingLivePriceHoldings += 1
+        }
+
+        if (stock.status === 'holding' && !stock.symbol) {
+          accumulator.missingSymbolHoldings += 1
+        }
+
         return accumulator
       },
       {
         totalStocks: 0,
         totalInvestment: 0,
         totalProfitLoss: 0,
+        totalMarketValue: 0,
+        totalUnrealizedGain: 0,
+        livePricedHoldings: 0,
+        missingLivePriceHoldings: 0,
+        missingSymbolHoldings: 0,
       },
     )
   }, [filteredStocks])
+
+  const attachQuoteSnapshot = (values) => {
+    const symbol = values.symbol?.toUpperCase()
+    const quote = symbol ? quotes[symbol] : null
+
+    if (quote?.ltp == null) {
+      return values
+    }
+
+    return {
+      ...values,
+      lastQuote: quote.ltp,
+      quoteUpdatedAt: dseLastUpdated ?? new Date().toISOString(),
+    }
+  }
 
   const activeStockLabel = selectedStockName === 'all' ? 'All Stocks' : selectedStockName
   const activeStatusLabel =
@@ -72,7 +172,7 @@ function App() {
     setIsSavingStock(true)
 
     try {
-      await addStock(createStockPayload(values))
+      await addStock(createStockPayload(attachQuoteSnapshot(values)))
       setIsAddOpen(false)
     } catch (error) {
       console.error('Failed to add stock entry.', error)
@@ -91,7 +191,7 @@ function App() {
     setIsSavingStock(true)
 
     try {
-      await updateStock(editingStock.id, normalizeStockValues(values))
+      await updateStock(editingStock.id, normalizeStockValues(attachQuoteSnapshot(values)))
       setEditingStock(null)
     } catch (error) {
       console.error('Failed to update stock entry.', error)
@@ -239,6 +339,16 @@ function App() {
               compact
             />
           ) : null}
+
+          <DseQuoteStatus
+            status={dseStatus}
+            error={dseError}
+            lastUpdated={dseLastUpdated}
+            isStale={isDseStale}
+            marketOpen={marketOpen}
+            quoteCount={quoteCount}
+            onRefresh={refreshDseQuotes}
+          />
 
           <SummaryCards summary={summary} />
 
