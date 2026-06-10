@@ -18,7 +18,8 @@ function AuthScreen({ authError, isSigningIn, onSignIn, configError }) {
               </h1>
               <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
                 This app now uses Firebase Authentication and Firestore so your entries stay tied
-                to your own account and are not shown to other visitors.
+                to your own account and are not shown to other visitors. After sign-in, search DSE
+                trading codes directly instead of memorizing them.
               </p>
             </div>
 

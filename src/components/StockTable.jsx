@@ -179,7 +179,7 @@ function LivePrice({ value, source, symbol }) {
     return (
       <div>
         <span className="text-slate-500">—</span>
-        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">Add DSE code</p>
+        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">Add a DSE code</p>
       </div>
     )
   }

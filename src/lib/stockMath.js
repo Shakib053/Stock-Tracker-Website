@@ -49,9 +49,11 @@ export function enrichStockWithQuote(stock, quotes = {}) {
 }
 
 export function normalizeStockValues(values) {
+  const symbol = normalizeSymbol(values.symbol)
+
   const normalized = {
-    stockName: values.stockName,
-    symbol: normalizeSymbol(values.symbol),
+    stockName: String(values.stockName ?? '').trim() || symbol,
+    symbol,
     buyingPrice: Number(values.buyingPrice),
     quantity: Number(values.quantity),
     soldPrice: Number(values.soldPrice),
