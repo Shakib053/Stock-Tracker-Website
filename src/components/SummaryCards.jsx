@@ -52,7 +52,7 @@ function getSummaryHint(summary, hintKey) {
     }
 
     if (summary.missingSymbolHoldings > 0) {
-      return 'Edit holdings and add a DSE trading code (e.g. GP) to see live value'
+      return 'Edit holdings and choose a DSE trading code to see live value'
     }
 
     if (summary.missingLivePriceHoldings > 0) {

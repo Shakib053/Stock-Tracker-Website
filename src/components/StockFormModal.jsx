@@ -10,12 +10,18 @@ function StockFormModal({
   description,
   submitLabel,
   initialValues = DEFAULT_FORM_VALUES,
+  symbolOptions = [],
   isSubmitting = false,
   onClose,
   onSubmit,
 }) {
   const [formValues, setFormValues] = useState(DEFAULT_FORM_VALUES)
   const [errors, setErrors] = useState({})
+  const [isSymbolMenuOpen, setIsSymbolMenuOpen] = useState(false)
+  const [activeSymbolIndex, setActiveSymbolIndex] = useState(0)
+  const normalizedSymbolOptions = useMemo(() => {
+    return symbolOptions.map((symbol) => String(symbol).trim().toUpperCase())
+  }, [symbolOptions])
 
   useEffect(() => {
     if (!isOpen) {
@@ -31,7 +37,31 @@ function StockFormModal({
       status: initialValues.status ?? 'holding',
     })
     setErrors({})
+    setIsSymbolMenuOpen(false)
+    setActiveSymbolIndex(0)
   }, [initialValues, isOpen])
+
+  const symbolSuggestions = useMemo(() => {
+    const query = formValues.symbol.trim().toUpperCase()
+
+    if (!query) {
+      return normalizedSymbolOptions.slice(0, 8)
+    }
+
+    return normalizedSymbolOptions
+      .filter((symbol) => symbol.includes(query))
+      .sort((left, right) => {
+        const leftStarts = left.startsWith(query)
+        const rightStarts = right.startsWith(query)
+
+        if (leftStarts !== rightStarts) {
+          return leftStarts ? -1 : 1
+        }
+
+        return left.localeCompare(right)
+      })
+      .slice(0, 8)
+  }, [formValues.symbol, normalizedSymbolOptions])
 
   const liveValues = useMemo(() => {
     return calculateDerivedValues({
@@ -45,22 +75,70 @@ function StockFormModal({
     const { name, value } = event.target
     setFormValues((currentValues) => ({ ...currentValues, [name]: value }))
     setErrors((currentErrors) => ({ ...currentErrors, [name]: undefined }))
+
+    if (name === 'symbol') {
+      setIsSymbolMenuOpen(true)
+      setActiveSymbolIndex(0)
+    }
+  }
+
+  const chooseSymbol = (symbol) => {
+    setFormValues((currentValues) => ({ ...currentValues, symbol }))
+    setErrors((currentErrors) => ({ ...currentErrors, symbol: undefined }))
+    setIsSymbolMenuOpen(false)
+    setActiveSymbolIndex(0)
+  }
+
+  const handleSymbolKeyDown = (event) => {
+    if (!isSymbolMenuOpen || symbolSuggestions.length === 0) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        setIsSymbolMenuOpen(true)
+      }
+
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveSymbolIndex((currentIndex) => (currentIndex + 1) % symbolSuggestions.length)
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveSymbolIndex((currentIndex) =>
+        currentIndex === 0 ? symbolSuggestions.length - 1 : currentIndex - 1,
+      )
+      return
+    }
+
+    if (event.key === 'Enter' && symbolSuggestions[activeSymbolIndex]) {
+      event.preventDefault()
+      chooseSymbol(symbolSuggestions[activeSymbolIndex])
+      return
+    }
+
+    if (event.key === 'Escape') {
+      setIsSymbolMenuOpen(false)
+    }
   }
 
   const handleSubmit = (event) => {
     event.preventDefault()
 
     const nextErrors = {}
-    const trimmedStockName = formValues.stockName.trim()
     const trimmedBuyingPrice = formValues.buyingPrice.trim()
     const trimmedQuantity = formValues.quantity.trim()
     const trimmedSoldPrice = formValues.soldPrice.trim()
+    const trimmedSymbol = formValues.symbol.trim().toUpperCase()
     const buyingPrice = Number(trimmedBuyingPrice)
     const quantity = Number(trimmedQuantity)
     const soldPrice = trimmedSoldPrice === '' ? 0 : Number(trimmedSoldPrice)
 
-    if (!trimmedStockName) {
-      nextErrors.stockName = 'Stock name is required.'
+    if (!trimmedSymbol) {
+      nextErrors.symbol = 'DSE trading code is required.'
+    } else if (normalizedSymbolOptions.length > 0 && !normalizedSymbolOptions.includes(trimmedSymbol)) {
+      nextErrors.symbol = 'Choose a valid DSE trading code from the list.'
     }
 
     if (!trimmedBuyingPrice) {
@@ -89,8 +167,7 @@ function StockFormModal({
     }
 
     onSubmit({
-      stockName: trimmedStockName,
-      symbol: formValues.symbol.trim().toUpperCase(),
+      symbol: trimmedSymbol,
       buyingPrice,
       quantity,
       soldPrice,
@@ -129,30 +206,61 @@ function StockFormModal({
     >
       <form id="stock-form" className="space-y-5" onSubmit={handleSubmit}>
         <div className="grid gap-5 sm:grid-cols-2">
-          <FormField
-            label="Stock Name"
-            name="stockName"
-            value={formValues.stockName}
-            onChange={handleChange}
-            disabled={isSubmitting}
-            placeholder="Example: Grameenphone"
-            required
-            error={errors.stockName}
-          />
+          <div className="relative sm:col-span-2">
+            <label className="field-label" htmlFor="symbol">
+              DSE Trading Code
+              <span className="ml-1 text-danger">*</span>
+            </label>
+            <input
+              id="symbol"
+              name="symbol"
+              value={formValues.symbol}
+              onChange={handleChange}
+              onFocus={() => setIsSymbolMenuOpen(true)}
+              onBlur={() => {
+                window.setTimeout(() => setIsSymbolMenuOpen(false), 120)
+              }}
+              onKeyDown={handleSymbolKeyDown}
+              disabled={isSubmitting}
+              placeholder="Start typing a DSE code"
+              autoComplete="off"
+              className="field-input"
+            />
+            {errors.symbol ? <p className="mt-2 text-sm text-danger">{errors.symbol}</p> : null}
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              Search the prefetched DSE list as you type. Select a code to keep the live price
+              lookup accurate.
+            </p>
 
-          <FormField
-            label="DSE Trading Code"
-            name="symbol"
-            value={formValues.symbol}
-            onChange={handleChange}
-            disabled={isSubmitting}
-            placeholder="Example: GP"
-            error={errors.symbol}
-          />
-          <p className="-mt-3 text-xs leading-5 text-slate-400 sm:col-span-2">
-            Required for live market value. Use the exact DSE code from dsebd.org (e.g. GP, BRACBANK,
-            SQURPHARMA).
-          </p>
+            {isSymbolMenuOpen && symbolSuggestions.length > 0 ? (
+              <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95 shadow-glow backdrop-blur">
+                {symbolSuggestions.map((symbol, index) => (
+                  <button
+                    key={symbol}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      chooseSymbol(symbol)
+                    }}
+                    className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm transition ${
+                      index === activeSymbolIndex
+                        ? 'bg-sky-400/10 text-sky-200'
+                        : 'text-slate-200 hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="font-semibold uppercase tracking-wide">{symbol}</span>
+                    <span className="text-xs text-slate-500">DSE code</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {isSymbolMenuOpen && formValues.symbol.trim() && symbolSuggestions.length === 0 ? (
+              <div className="absolute z-20 mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/95 px-4 py-3 text-sm text-slate-400 shadow-glow backdrop-blur">
+                No matching DSE code found.
+              </div>
+            ) : null}
+          </div>
 
           <div>
             <label className="field-label" htmlFor="status">

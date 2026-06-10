@@ -25,7 +25,7 @@ function DseQuoteStatus({
           <p className="mt-2 text-xs text-slate-500">
             Last updated: {formatDateTime(lastUpdated)}
             {quotesReady ? (
-              <span className="ml-2 text-slate-400">{quoteCount} DSE symbols loaded</span>
+              <span className="ml-2 text-slate-400">{quoteCount} DSE codes loaded</span>
             ) : null}
             {isStale ? (
               <span className="ml-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-semibold uppercase tracking-wide text-amber-200">
@@ -36,7 +36,7 @@ function DseQuoteStatus({
           {error ? <p className="mt-2 text-sm text-amber-200">{error}</p> : null}
           {!error && status === 'ready' && quoteCount === 0 ? (
             <p className="mt-2 text-sm text-amber-200">
-              DSE prices loaded, but no symbols were returned. Click Refresh Prices.
+              DSE prices loaded, but no codes were returned. Click Refresh Prices.
             </p>
           ) : null}
           {!error && status === 'error' ? (

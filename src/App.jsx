@@ -50,6 +50,7 @@ function App() {
   const [actionError, setActionError] = useState('')
 
   const quoteCount = useMemo(() => Object.keys(quotes).length, [quotes])
+  const dseSymbols = useMemo(() => Object.keys(quotes).sort(), [quotes])
 
   const computedStocks = useMemo(
     () =>
@@ -295,8 +296,8 @@ function App() {
                 Track every stock position with private cloud access and instant profit insights.
               </h1>
               <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
-                Manage entries from a secure dashboard, watch auto-calculations update in real
-                time, and keep everything stored in your own Firebase account.
+                Manage entries from a secure dashboard, search DSE trading codes as you type, and
+                keep everything stored in your own Firebase account.
               </p>
             </div>
 
@@ -426,9 +427,10 @@ function App() {
       <StockFormModal
         isOpen={isAddOpen}
         title="Add Stock Entry"
-        description="Create a new stock record and preview the calculations before saving."
+        description="Create a new stock record by searching its DSE trading code, then preview the calculations before saving."
         submitLabel="Save Stock"
         initialValues={DEFAULT_FORM_VALUES}
+        symbolOptions={dseSymbols}
         isSubmitting={isSavingStock}
         onClose={() => setIsAddOpen(false)}
         onSubmit={handleAddStock}
@@ -437,9 +439,10 @@ function App() {
       <StockFormModal
         isOpen={Boolean(editingStock)}
         title="Edit Stock Entry"
-        description="Update the values below. Calculations refresh instantly while you type."
+        description="Update the values below and edit the DSE trading code if needed. Calculations refresh instantly while you type."
         submitLabel="Update Stock"
         initialValues={editingStock ?? DEFAULT_FORM_VALUES}
+        symbolOptions={dseSymbols}
         isSubmitting={isSavingStock}
         onClose={() => setEditingStock(null)}
         onSubmit={handleUpdateStock}

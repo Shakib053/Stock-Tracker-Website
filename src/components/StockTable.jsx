@@ -25,7 +25,6 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
           <thead className="bg-white/5">
             <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-400">
               {[
-                'Stock Name',
                 'Symbol',
                 'LTP',
                 'Day Change',
@@ -50,7 +49,6 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
           <tbody className="divide-y divide-white/10">
             {stocks.map((stock) => (
               <tr key={stock.id} className="text-sm text-slate-200">
-                <td className="px-4 py-4 font-semibold text-white">{stock.stockName}</td>
                 <td className="px-4 py-4">
                   {stock.symbol ? (
                     <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-1 text-xs font-semibold uppercase text-sky-200">
@@ -101,12 +99,13 @@ function StockTable({ stocks, activeFilterLabel, onEdit, onDelete }) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-lg font-semibold text-white">{stock.stockName}</h3>
                   {stock.symbol ? (
-                    <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs font-semibold uppercase text-sky-200">
+                    <h3 className="text-lg font-semibold uppercase tracking-wide text-white">
                       {stock.symbol}
-                    </span>
-                  ) : null}
+                    </h3>
+                  ) : (
+                    <h3 className="text-lg font-semibold text-white">—</h3>
+                  )}
                 </div>
                 <p className="mt-1 text-sm text-slate-400">
                   Qty {formatNumber(stock.quantity)} • Sold {formatCurrency(stock.soldPrice, 3)}
@@ -179,7 +178,7 @@ function LivePrice({ value, source, symbol }) {
     return (
       <div>
         <span className="text-slate-500">—</span>
-        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">Add DSE code</p>
+        <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-300">Add a DSE code</p>
       </div>
     )
   }
