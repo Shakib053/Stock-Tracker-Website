@@ -1,5 +1,4 @@
 const DSE_QUOTES_PROXY_URL = '/api/dse-quotes'
-const DSE_QUOTES_DIRECT_URL = 'https://bdstock.org/v1/dse/latest'
 const POLL_INTERVAL_MS = 60_000
 
 export { POLL_INTERVAL_MS }
@@ -77,34 +76,19 @@ async function fetchQuotesPayload(url) {
   return payload
 }
 
-function getQuoteSourceUrls() {
-  if (import.meta.env.DEV) {
-    return [DSE_QUOTES_DIRECT_URL, DSE_QUOTES_PROXY_URL]
-  }
-
-  return [DSE_QUOTES_PROXY_URL, DSE_QUOTES_DIRECT_URL]
-}
-
 export async function fetchDseQuotes() {
-  const urls = getQuoteSourceUrls()
-  let lastError = null
+  try {
+    const payload = await fetchQuotesPayload(DSE_QUOTES_PROXY_URL)
+    const quotes = buildQuotesMap(payload.data ?? [])
 
-  for (const url of urls) {
-    try {
-      const payload = await fetchQuotesPayload(url)
-      const quotes = buildQuotesMap(payload.data ?? [])
-
-      return {
-        quotes,
-        fetchedAt: payload.fetchedAt ?? new Date().toISOString(),
-        stale: Boolean(payload.stale),
-        source: url === DSE_QUOTES_PROXY_URL ? 'netlify-proxy' : 'bdstock.org',
-      }
-    } catch (error) {
-      lastError = error
-      console.warn(`DSE quote fetch failed for ${url}.`, error)
+    return {
+      quotes,
+      fetchedAt: payload.fetchedAt ?? new Date().toISOString(),
+      stale: Boolean(payload.stale),
+      source: payload.source ?? 'dse-proxy',
     }
+  } catch (error) {
+    console.warn(`DSE quote fetch failed for ${DSE_QUOTES_PROXY_URL}.`, error)
+    throw error
   }
-
-  throw lastError ?? new Error('Unable to fetch DSE quotes.')
 }

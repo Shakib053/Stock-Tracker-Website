@@ -1,4 +1,8 @@
-const UPSTREAM_URL = 'https://bdstock.org/v1/dse/latest'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const { fetchDseQuotesFromOfficialSite } = require('./dse-quotes-parser.cjs')
+
 const CACHE_TTL_MS = 45_000
 const MAX_RETRIES = 3
 
@@ -18,23 +22,7 @@ async function fetchUpstream() {
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
     try {
-      const response = await fetch(UPSTREAM_URL, {
-        headers: {
-          Accept: 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`Upstream returned status ${response.status}.`)
-      }
-
-      const payload = await response.json()
-
-      if (!payload?.success) {
-        throw new Error(payload?.message || 'Upstream response was not successful.')
-      }
-
-      return payload
+      return await fetchDseQuotesFromOfficialSite()
     } catch (error) {
       lastError = error
 
@@ -58,7 +46,7 @@ function buildResponse(body, statusCode = 200) {
   }
 }
 
-exports.handler = async function handler() {
+export async function handler() {
   const now = Date.now()
 
   if (cache.payload && cache.expiresAt > now) {
@@ -70,14 +58,14 @@ exports.handler = async function handler() {
   }
 
   try {
-    const upstream = await fetchUpstream()
+    const data = await fetchUpstream()
     const fetchedAt = new Date().toISOString()
     const payload = {
       success: true,
-      data: upstream.data ?? [],
-      message: upstream.message ?? '',
+      data,
+      message: '',
       fetchedAt,
-      source: 'bdstock.org',
+      source: 'dsebd.org',
       stale: false,
       cached: false,
     }
