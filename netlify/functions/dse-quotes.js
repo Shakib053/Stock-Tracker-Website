@@ -1,14 +1,9 @@
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
 const { fetchDseQuotesFromOfficialSite } = require('./dse-quotes-parser.cjs')
 
-const CACHE_TTL_MS = 45_000
 const MAX_RETRIES = 3
 
 let cache = {
   payload: null,
-  expiresAt: 0,
 }
 
 function sleep(ms) {
@@ -40,23 +35,15 @@ function buildResponse(body, statusCode = 200) {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=30',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      Pragma: 'no-cache',
+      Expires: '0',
     },
     body: JSON.stringify(body),
   }
 }
 
-export async function handler() {
-  const now = Date.now()
-
-  if (cache.payload && cache.expiresAt > now) {
-    return buildResponse({
-      ...cache.payload,
-      stale: false,
-      cached: true,
-    })
-  }
-
+exports.handler = async function handler() {
   try {
     const data = await fetchUpstream()
     const fetchedAt = new Date().toISOString()
@@ -72,7 +59,6 @@ export async function handler() {
 
     cache = {
       payload,
-      expiresAt: now + CACHE_TTL_MS,
     }
 
     return buildResponse(payload)
