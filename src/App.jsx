@@ -42,7 +42,7 @@ function App() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingStock, setEditingStock] = useState(null)
   const [deletingStock, setDeletingStock] = useState(null)
-  const [selectedStockName, setSelectedStockName] = useState('all')
+  const [selectedStockSymbol, setSelectedStockSymbol] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSavingStock, setIsSavingStock] = useState(false)
@@ -89,20 +89,30 @@ function App() {
   }, [dseLastUpdated, dseStatus, quotes, stocks, updateStockQuotes])
 
   const stockFilterOptions = useMemo(() => {
-    return Array.from(new Set(computedStocks.map((stock) => stock.stockName))).sort((left, right) =>
-      left.localeCompare(right),
-    )
+    return Array.from(
+      new Set(
+        computedStocks
+          .map((stock) => normalizeSymbol(stock.symbol))
+          .filter(Boolean),
+      ),
+    ).sort((left, right) => left.localeCompare(right))
   }, [computedStocks])
+
+  useEffect(() => {
+    if (selectedStockSymbol !== 'all' && !stockFilterOptions.includes(selectedStockSymbol)) {
+      setSelectedStockSymbol('all')
+    }
+  }, [selectedStockSymbol, stockFilterOptions])
 
   const filteredStocks = useMemo(() => {
     return computedStocks.filter((stock) => {
-      const matchesStockName =
-        selectedStockName === 'all' || stock.stockName === selectedStockName
+      const matchesStockSymbol =
+        selectedStockSymbol === 'all' || normalizeSymbol(stock.symbol) === selectedStockSymbol
       const matchesStatus = selectedStatus === 'all' || stock.status === selectedStatus
 
-      return matchesStockName && matchesStatus
+      return matchesStockSymbol && matchesStatus
     })
-  }, [computedStocks, selectedStatus, selectedStockName])
+  }, [computedStocks, selectedStatus, selectedStockSymbol])
 
   const summary = useMemo(() => {
     return filteredStocks.reduce(
@@ -161,7 +171,7 @@ function App() {
     }
   }
 
-  const activeStockLabel = selectedStockName === 'all' ? 'All Stocks' : selectedStockName
+  const activeStockLabel = selectedStockSymbol === 'all' ? 'All Stocks' : selectedStockSymbol
   const activeStatusLabel =
     selectedStatus === 'all'
       ? 'All Statuses'
@@ -208,8 +218,8 @@ function App() {
     }
 
     const shouldResetFilter =
-      selectedStockName !== 'all' &&
-      deletingStock.stockName === selectedStockName &&
+      selectedStockSymbol !== 'all' &&
+      normalizeSymbol(deletingStock.symbol) === selectedStockSymbol &&
       filteredStocks.length === 1
 
     setActionError('')
@@ -219,7 +229,7 @@ function App() {
       await deleteStock(deletingStock.id)
 
       if (shouldResetFilter) {
-        setSelectedStockName('all')
+        setSelectedStockSymbol('all')
       }
 
       setDeletingStock(null)
@@ -253,7 +263,7 @@ function App() {
       setIsAddOpen(false)
       setEditingStock(null)
       setDeletingStock(null)
-      setSelectedStockName('all')
+      setSelectedStockSymbol('all')
       setSelectedStatus('all')
     } catch (error) {
       console.error('Failed to sign out.', error)
@@ -396,14 +406,14 @@ function App() {
                   </label>
                   <select
                     id="stock-filter"
-                    value={selectedStockName}
-                    onChange={(event) => setSelectedStockName(event.target.value)}
+                    value={selectedStockSymbol}
+                    onChange={(event) => setSelectedStockSymbol(event.target.value)}
                     className="field-input min-w-[220px] py-2.5"
                   >
                     <option value="all">All Stocks</option>
-                    {stockFilterOptions.map((stockName) => (
-                      <option key={stockName} value={stockName}>
-                        {stockName}
+                    {stockFilterOptions.map((stockSymbol) => (
+                      <option key={stockSymbol} value={stockSymbol}>
+                        {stockSymbol}
                       </option>
                     ))}
                   </select>
