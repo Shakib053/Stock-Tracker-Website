@@ -22,7 +22,7 @@ export function normalizeSymbol(symbol) {
   return String(symbol ?? '').trim().toUpperCase()
 }
 
-export function enrichStockWithQuote(stock, quotes = {}) {
+export function enrichStockWithQuote(stock, quotes = {}, { quotesAreStale = false } = {}) {
   const symbol = normalizeSymbol(stock.symbol)
   const liveQuote = symbol ? quotes[symbol] : null
   const ltp = liveQuote?.ltp ?? stock.lastQuote ?? null
@@ -41,7 +41,7 @@ export function enrichStockWithQuote(stock, quotes = {}) {
     symbol,
     ltp,
     dayChange: liveQuote?.change ?? null,
-    quoteSource: liveQuote ? 'live' : stock.lastQuote != null ? 'cached' : 'none',
+    quoteSource: liveQuote ? (quotesAreStale ? 'cached' : 'live') : stock.lastQuote != null ? 'cached' : 'none',
     marketValue,
     unrealizedGain,
     unrealizedGainPercent,

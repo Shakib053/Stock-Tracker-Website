@@ -7,6 +7,7 @@ import StockTable from './components/StockTable'
 import SummaryCards from './components/SummaryCards'
 import { DEFAULT_FORM_VALUES, STATUS_OPTIONS } from './lib/constants'
 import { missingFirebaseConfig } from './lib/firebase'
+import { buildPortfolioSymbolOptions, filterPortfolioStocks } from './lib/portfolioFilters'
 import {
   calculateDerivedValues,
   createStockPayload,
@@ -57,9 +58,9 @@ function App() {
       stocks.map((stock) => ({
         ...stock,
         ...calculateDerivedValues(stock),
-        ...enrichStockWithQuote(stock, quotes),
+        ...enrichStockWithQuote(stock, quotes, { quotesAreStale: isDseStale }),
       })),
-    [quotes, stocks],
+    [isDseStale, quotes, stocks],
   )
 
   useEffect(() => {
@@ -89,13 +90,7 @@ function App() {
   }, [dseLastUpdated, dseStatus, quotes, stocks, updateStockQuotes])
 
   const stockFilterOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        computedStocks
-          .map((stock) => normalizeSymbol(stock.symbol))
-          .filter(Boolean),
-      ),
-    ).sort((left, right) => left.localeCompare(right))
+    return buildPortfolioSymbolOptions(computedStocks)
   }, [computedStocks])
 
   useEffect(() => {
@@ -105,12 +100,9 @@ function App() {
   }, [selectedStockSymbol, stockFilterOptions])
 
   const filteredStocks = useMemo(() => {
-    return computedStocks.filter((stock) => {
-      const matchesStockSymbol =
-        selectedStockSymbol === 'all' || normalizeSymbol(stock.symbol) === selectedStockSymbol
-      const matchesStatus = selectedStatus === 'all' || stock.status === selectedStatus
-
-      return matchesStockSymbol && matchesStatus
+    return filterPortfolioStocks(computedStocks, {
+      selectedSymbol: selectedStockSymbol,
+      selectedStatus,
     })
   }, [computedStocks, selectedStatus, selectedStockSymbol])
 
