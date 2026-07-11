@@ -18,7 +18,9 @@ function DseQuoteStatus({
         <div>
           <p className="text-sm font-semibold text-white">DSE Live Prices</p>
           <p className="mt-1 text-sm text-slate-400">
-            {marketOpen
+            {isStale && quotesReady
+              ? 'Live data is unavailable. Showing cached DSE prices and stock symbols.'
+              : marketOpen
               ? 'Market is open. Prices refresh about every minute.'
               : 'Market is closed. Showing the latest available DSE prices.'}
           </p>

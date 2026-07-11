@@ -5,4 +5,5 @@ dist/
 .env.development.local
 .env.production.local
 .netlify
+.DS_Store
 firebase-debug.log
