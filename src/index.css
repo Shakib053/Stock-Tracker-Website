@@ -48,3 +48,80 @@
     @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-accent/40;
   }
 }
+
+@layer components {
+  .terminal-shell { @apply min-h-screen bg-grid bg-[size:36px_36px] lg:pl-64; }
+  .terminal-sidebar { @apply fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-white/10 bg-slate-950/90 p-5 backdrop-blur-xl lg:block; }
+  .brand { @apply mb-10 flex items-center gap-3; }
+  .brand > span { @apply grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-emerald-400 font-extrabold text-slate-950; }
+  .brand strong,.brand small { @apply block; } .brand small { @apply mt-1 text-xs text-slate-500; }
+  .nav-label { @apply mb-3 px-3 text-[10px] font-bold uppercase tracking-[.22em] text-slate-500; }
+  .terminal-sidebar nav { @apply space-y-1; }
+  .terminal-sidebar nav button { @apply flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white; }
+  .terminal-sidebar nav button.active { @apply bg-sky-400/10 text-sky-200; }
+  .terminal-sidebar nav b { @apply ml-auto rounded-full bg-white/10 px-2 py-0.5 text-xs; }
+  .terminal-sidebar nav b.review-count { @apply bg-amber-400/20 text-amber-300; }
+  .terminal-workspace { @apply min-h-screen; }
+  .terminal-topbar { @apply sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-white/10 bg-app/85 px-4 backdrop-blur-xl sm:px-7; }
+  .terminal-topbar h1 { @apply text-xl font-bold; }
+  .topbar-actions,.header-actions { @apply flex flex-wrap items-center gap-2; }
+  .market-state { @apply hidden items-center gap-2 text-xs text-slate-400 sm:flex; }
+  .market-state i { @apply h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]; }
+  .avatar { @apply grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/5 text-xs font-bold hover:bg-white/10; }
+  .terminal-main { @apply mx-auto max-w-[1500px] p-4 pb-24 sm:p-7 lg:pb-7; }
+  .page-stack { @apply space-y-5; }
+  .eyebrow { @apply text-[10px] font-bold uppercase tracking-[.22em] text-sky-300; }
+  .page-header { @apply flex flex-col justify-between gap-5 py-2 lg:flex-row lg:items-end; }
+  .page-header h2 { @apply mt-2 text-2xl font-extrabold text-white sm:text-3xl; }
+  .page-header > div > p:last-child { @apply mt-2 max-w-2xl text-sm leading-6 text-slate-400; }
+  .btn { @apply inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40; }
+  .btn.buy { @apply border-emerald-400/20 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20; }
+  .btn.sell { @apply border-red-400/20 bg-red-400/10 text-red-300 hover:bg-red-400/20; }
+  .btn.delete { @apply border-red-400/30 bg-red-500/15 text-red-200 hover:bg-red-500/25; }
+  .btn.small { @apply px-3 py-1.5 text-xs; }
+  .panel { @apply overflow-hidden rounded-2xl border border-white/10 bg-surface/85 shadow-glow backdrop-blur; }
+  .panel-header { @apply flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4; }
+  .panel-header h3 { @apply font-bold text-white; } .panel-header p { @apply mt-1 text-xs text-slate-400; }
+  .metrics { @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6; }
+  .metric { @apply rounded-2xl border border-white/10 bg-gradient-to-br from-white/[.06] to-transparent p-5; }
+  .metric.clickable { @apply cursor-pointer transition hover:-translate-y-0.5 hover:border-sky-400/30 focus:outline-none focus:ring-2 focus:ring-sky-400/40; }
+  .metric > span,.metric > strong,.metric > small { @apply block; }
+  .metric > span { @apply text-xs font-semibold text-slate-400; } .metric > strong { @apply mt-3 text-xl font-extrabold text-white; } .metric > small { @apply mt-2 text-[11px] leading-4 text-slate-500; }
+  .filters { @apply grid gap-3 border-b border-white/10 p-4 md:grid-cols-3; }
+  .input { @apply min-w-0 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/10; }
+  .table-wrap { @apply overflow-x-auto; }
+  table { @apply w-full min-w-[850px] border-collapse text-sm; }
+  th { @apply bg-white/[.025] px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500; }
+  td { @apply border-t border-white/[.07] px-4 py-3 text-slate-300; }
+  tbody tr { @apply transition hover:bg-white/[.025]; }
+  .symbol-link { @apply font-bold text-sky-300 hover:text-sky-200; }
+  .positive { @apply text-emerald-400 !important; } .negative { @apply text-red-400 !important; } .warning { @apply text-amber-300 !important; }
+  .pill { @apply inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-bold tracking-wider text-slate-400; }
+  .pill.buy { @apply border-emerald-400/20 bg-emerald-400/10 text-emerald-300; } .pill.sell { @apply border-red-400/20 bg-red-400/10 text-red-300; }
+  .empty { @apply p-12 text-center; } .empty h3 { @apply text-lg font-bold text-white; } .empty p { @apply mt-2 text-sm text-slate-500; }
+  .alert { @apply mb-5 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200; }
+  .stock-hero { @apply flex flex-col justify-between gap-5 p-6 sm:flex-row sm:items-center; } .stock-hero h2 { @apply mt-2 text-3xl font-black; }
+  .hero-price { @apply mt-4 block text-3xl; } .stock-hero p:last-child { @apply mt-1 text-sm; }
+  .back { @apply text-sm font-semibold text-sky-300 hover:text-sky-200; }
+  .fiscal-grid { @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3; }
+  .fiscal-card { @apply rounded-2xl border border-white/10 bg-surface/85 p-6 text-left shadow-glow transition hover:-translate-y-0.5 hover:border-sky-400/30; }
+  .fiscal-card h2 { @apply mt-2 text-2xl font-extrabold; } .fiscal-card > strong { @apply mt-6 block text-2xl; } .fiscal-card > span { @apply mt-1 block text-xs text-slate-500; } .fiscal-card > div { @apply mt-6 border-t border-white/10 pt-4 text-sm text-slate-400; }
+  .review-card { @apply flex flex-col justify-between gap-5 p-5 xl:flex-row xl:items-end; } .review-card h2 { @apply mt-3 text-xl font-bold; } .review-card p { @apply mt-1 text-sm text-slate-400; }
+  .review-fields { @apply grid gap-3 sm:grid-cols-3 sm:items-end; } label { @apply text-xs font-semibold text-slate-400; } label .input { @apply mt-2 block w-full; } label small { @apply mt-2 block text-slate-500; }
+  .steps { @apply mb-6 grid grid-cols-3 gap-2; } .steps span { @apply rounded-lg bg-white/5 px-3 py-2 text-center text-xs text-slate-500; } .steps span.active { @apply bg-sky-400/10 text-sky-300; }
+  .form-grid { @apply grid gap-4 sm:grid-cols-2; } .form-grid .calculation { @apply sm:col-span-2; }
+  .calculation { @apply rounded-xl border border-white/10 bg-slate-950/40 p-4; } .calculation p { @apply flex justify-between gap-4 py-2 text-sm text-slate-400; } .calculation b { @apply text-white; } .calculation .total { @apply mt-2 border-t border-white/10 pt-4 font-bold; }
+  .lot-list { @apply mt-4 space-y-2; } .lot-list label { @apply flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[.03] p-3; } .lot-list span,.lot-list small { @apply block; } .lot-list small { @apply mt-1; } .lot-list .input { @apply w-28; }
+  .allocation-note { @apply rounded-xl bg-sky-400/10 p-3 text-sm text-sky-200; } .review-grid { @apply grid gap-4 md:grid-cols-2; }
+  .modal-actions { @apply flex flex-wrap justify-end gap-2; }
+  .delete-warning { @apply mb-4 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-100; }
+  .loading { @apply grid min-h-screen place-content-center gap-4 text-center; } .loading.compact { @apply min-h-[50vh]; } .loading i { @apply mx-auto h-12 w-12 animate-pulse rounded-full border border-sky-400/30 bg-sky-400/10; }
+  .mobile-nav { @apply fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-white/10 bg-slate-950/95 p-2 backdrop-blur-xl lg:hidden; }
+  .mobile-nav button { @apply flex flex-col items-center gap-1 rounded-lg py-2 text-[9px] font-semibold text-slate-500; } .mobile-nav button span { @apply text-base; } .mobile-nav button.active { @apply bg-sky-400/10 text-sky-300; }
+}
+
+@media (max-width: 640px) {
+  .terminal-topbar .market-state,.terminal-topbar .btn.sell { display:none; }
+  .terminal-topbar { gap:10px; }
+  .terminal-topbar .eyebrow { display:none; }
+}
