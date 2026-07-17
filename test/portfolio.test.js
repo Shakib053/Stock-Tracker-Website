@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { COMMISSION_RATE, buildPositions, buildSummary, commission, fiscalYear, inFiscalYear, netAmount, realizedProfit } from '../src/lib/portfolio.js'
+import { COMMISSION_RATE, buildPositions, buildSummary, buildTransactionDeletion, commission, fiscalYear, inFiscalYear, netAmount, realizedProfit } from '../src/lib/portfolio.js'
 
 test('uses 0.04% commission on both buy and sell transactions', () => {
   const buy = { type: 'buy', quantity: 100, price: 50 }
@@ -49,4 +49,44 @@ test('summary excludes undated migrated transactions from fiscal totals', () => 
   assert.equal(summary.fiscalInvestment, 0)
   assert.equal(summary.fiscalRealized, 0)
   assert.ok(summary.lifetimeRealized > 0)
+})
+
+test('summary reports distinct active stocks and currently held shares', () => {
+  const positions = [{ symbol: 'GP', quantity: 15, cost: 100 }, { symbol: 'SQURPHARMA', quantity: 8, cost: 200 }]
+  const summary = buildSummary(positions, [], [], 'FY 2026–27')
+  assert.equal(summary.totalStocks, 2)
+  assert.equal(summary.totalShares, 23)
+})
+
+test('deleting an unallocated buy removes its transaction and purchase lot', () => {
+  const buy = { id: 'buy', type: 'buy' }
+  const lot = { id: 'lot', buyTransactionId: 'buy' }
+  const deletion = buildTransactionDeletion('buy', [buy], [lot])
+  assert.deepEqual(deletion.transactionsToDelete, [buy])
+  assert.deepEqual(deletion.lotsToDelete, [lot])
+  assert.deepEqual(deletion.restorations, [])
+})
+
+test('deleting a sale restores all of its purchase-lot allocations', () => {
+  const sale = { id: 'sale', type: 'sell', allocations: [{ lotId: 'a', quantity: 4 }, { lotId: 'b', quantity: 6 }] }
+  const deletion = buildTransactionDeletion('sale', [sale], [])
+  assert.deepEqual(deletion.transactionsToDelete, [sale])
+  assert.deepEqual(deletion.restorations, sale.allocations)
+})
+
+test('deleting a buy cascades dependent sales and restores only unaffected lots', () => {
+  const buy = { id: 'buy-a', type: 'buy' }
+  const otherBuy = { id: 'buy-b', type: 'buy' }
+  const sale = { id: 'sale', type: 'sell', allocations: [{ lotId: 'lot-a', quantity: 4 }, { lotId: 'lot-b', quantity: 6 }] }
+  const lots = [{ id: 'lot-a', buyTransactionId: 'buy-a' }, { id: 'lot-b', buyTransactionId: 'buy-b' }]
+  const deletion = buildTransactionDeletion('buy-a', [buy, otherBuy, sale], lots)
+  assert.deepEqual(deletion.transactionsToDelete, [buy, sale])
+  assert.deepEqual(deletion.lotsToDelete, [lots[0]])
+  assert.deepEqual(deletion.restorations, [{ lotId: 'lot-b', quantity: 6 }])
+})
+
+test('migrated buy deletion retains the legacy identifier for source cleanup', () => {
+  const buy = { id: 'legacy-stock-buy', type: 'buy', legacyStockId: 'stock' }
+  const deletion = buildTransactionDeletion(buy.id, [buy], [])
+  assert.equal(deletion.transaction.legacyStockId, 'stock')
 })

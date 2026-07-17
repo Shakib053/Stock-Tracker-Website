@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { collection, doc, onSnapshot, orderBy, query, runTransaction, writeBatch } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../lib/firebase'
-import { COMMISSION_RATE, normalizeSymbol } from '../lib/portfolio'
+import { buildTransactionDeletion, COMMISSION_RATE, normalizeSymbol } from '../lib/portfolio'
 
 const path = (uid, name) => collection(db, 'users', uid, name)
 
@@ -90,6 +90,37 @@ export function usePortfolio(user) {
     await batch.commit()
   }
 
+  const deleteTransaction = async (transactionId) => {
+    const deletion = buildTransactionDeletion(transactionId, transactions, lots)
+    if (!deletion) throw new Error('The selected transaction no longer exists.')
+
+    await runTransaction(db, async (fireTx) => {
+      const transactionRefs = deletion.transactionsToDelete.map((item) => doc(path(user.uid, 'transactions'), item.id))
+      const deletedLotRefs = deletion.lotsToDelete.map((lot) => doc(path(user.uid, 'lots'), lot.id))
+      const restorationIds = [...new Set(deletion.restorations.map((item) => item.lotId))]
+      const restorationRefs = restorationIds.map((id) => doc(path(user.uid, 'lots'), id))
+      const legacyRef = deletion.transaction.type === 'buy' && deletion.transaction.legacyStockId
+        ? doc(path(user.uid, 'stocks'), deletion.transaction.legacyStockId)
+        : null
+      const refs = [...transactionRefs, ...deletedLotRefs, ...restorationRefs, ...(legacyRef ? [legacyRef] : [])]
+      const snapshots = await Promise.all(refs.map((ref) => fireTx.get(ref)))
+
+      if (!snapshots[0]?.exists()) throw new Error('The selected transaction no longer exists.')
+      const restorationOffset = transactionRefs.length + deletedLotRefs.length
+      restorationRefs.forEach((ref, index) => {
+        const snapshot = snapshots[restorationOffset + index]
+        if (!snapshot.exists()) throw new Error('A related purchase lot no longer exists. Refresh and try again.')
+        const quantity = deletion.restorations
+          .filter((item) => item.lotId === restorationIds[index])
+          .reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+        fireTx.update(ref, { remainingQty: Number(snapshot.data().remainingQty || 0) + quantity, updatedAt: new Date().toISOString() })
+      })
+      transactionRefs.forEach((ref) => fireTx.delete(ref))
+      deletedLotRefs.forEach((ref) => fireTx.delete(ref))
+      if (legacyRef) fireTx.delete(legacyRef)
+    })
+  }
+
   const pendingReviews = useMemo(() => legacyStocks.filter((stock) => stock.migrationVersion && !stock.migrationReviewedAt), [legacyStocks])
-  return { transactions, lots, pendingReviews, status, error, recordBuy, recordSell, completeMigrationDates }
+  return { transactions, lots, pendingReviews, status, error, recordBuy, recordSell, deleteTransaction, completeMigrationDates }
 }

@@ -59,11 +59,31 @@ export function buildSummary(positions, transactions, lots, selectedFiscal) {
   const marketValue = positions.reduce((sum, item) => sum + (item.marketValue || 0), 0)
   const unrealized = positions.reduce((sum, item) => sum + (item.unrealized || 0), 0)
   return {
+    totalStocks: positions.length,
+    totalShares: positions.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
     cost, marketValue, unrealized, unrealizedPct: cost ? unrealized / cost * 100 : 0,
     fiscalInvestment: datedFiscal.filter((tx) => tx.type === 'buy').reduce((sum, tx) => sum + netAmount(tx), 0),
     fiscalRealized: datedFiscal.filter((tx) => tx.type === 'sell').reduce((sum, tx) => sum + realizedProfit(tx, lotsById), 0),
     lifetimeRealized: sells.reduce((sum, tx) => sum + realizedProfit(tx, lotsById), 0),
   }
+}
+
+export function buildTransactionDeletion(transactionId, transactions, lots) {
+  const transaction = transactions.find((item) => item.id === transactionId)
+  if (!transaction) return null
+
+  if (transaction.type === 'sell') {
+    return { transaction, lotsToDelete: [], transactionsToDelete: [transaction], restorations: transaction.allocations || [] }
+  }
+
+  const lotsToDelete = lots.filter((lot) => lot.buyTransactionId === transaction.id)
+  const deletedLotIds = new Set(lotsToDelete.map((lot) => lot.id))
+  const dependentSales = transactions.filter((item) => item.type === 'sell'
+    && (item.allocations || []).some((allocation) => deletedLotIds.has(allocation.lotId)))
+  const restorations = dependentSales.flatMap((sale) => (sale.allocations || [])
+    .filter((allocation) => !deletedLotIds.has(allocation.lotId)))
+
+  return { transaction, lotsToDelete, transactionsToDelete: [transaction, ...dependentSales], restorations }
 }
 
 export function fiscalYears(transactions, now = new Date()) {
