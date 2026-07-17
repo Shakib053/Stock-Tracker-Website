@@ -1,484 +1,147 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import AuthScreen from './components/AuthScreen'
-import DeleteConfirmModal from './components/DeleteConfirmModal'
-import DseQuoteStatus from './components/DseQuoteStatus'
-import StockFormModal from './components/StockFormModal'
-import StockTable from './components/StockTable'
-import SummaryCards from './components/SummaryCards'
-import { DEFAULT_FORM_VALUES, STATUS_OPTIONS } from './lib/constants'
-import { missingFirebaseConfig } from './lib/firebase'
-import { buildPortfolioSymbolOptions, filterPortfolioStocks } from './lib/portfolioFilters'
-import {
-  calculateDerivedValues,
-  createStockPayload,
-  enrichStockWithQuote,
-  normalizeStockValues,
-  normalizeSymbol,
-} from './lib/stockMath'
+import Modal from './components/Modal'
 import { useAuth } from './hooks/useAuth'
 import { useDseQuotes } from './hooks/useDseQuotes'
-import { useStocks } from './hooks/useStocks'
+import { usePortfolio } from './hooks/usePortfolio'
+import { buildPositions, buildSummary, commission, fiscalYears, grossAmount, inFiscalYear, netAmount, realizedProfit } from './lib/portfolio'
+import { missingFirebaseConfig } from './lib/firebase'
 
-function App() {
-  const { user, status: authStatus, error: authError, signIn, logOut, isConfigured } = useAuth()
-  const {
-    stocks,
-    status: stocksStatus,
-    error: stocksError,
-    addStock,
-    updateStock,
-    updateStockQuotes,
-    deleteStock,
-  } = useStocks(user)
-  const {
-    quotes,
-    status: dseStatus,
-    error: dseError,
-    lastUpdated: dseLastUpdated,
-    isStale: isDseStale,
-    marketOpen,
-    refresh: refreshDseQuotes,
-  } = useDseQuotes({ enabled: authStatus === 'signed_in' })
-  const lastPersistedQuoteFetchRef = useRef(null)
-  const [isAddOpen, setIsAddOpen] = useState(false)
-  const [editingStock, setEditingStock] = useState(null)
-  const [deletingStock, setDeletingStock] = useState(null)
-  const [selectedStockSymbol, setSelectedStockSymbol] = useState('all')
-  const [selectedStatus, setSelectedStatus] = useState('all')
-  const [isSigningIn, setIsSigningIn] = useState(false)
-  const [isSavingStock, setIsSavingStock] = useState(false)
-  const [isDeletingStock, setIsDeletingStock] = useState(false)
+const money = (value, digits = 2) => `৳${Number(value || 0).toLocaleString('en-BD', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+const number = (value) => Number(value || 0).toLocaleString('en-BD')
+const percent = (value) => `${Number(value || 0) >= 0 ? '+' : '−'}${Math.abs(Number(value || 0)).toFixed(2)}%`
+const prettyDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('en-BD', { dateStyle: 'medium' }) : 'Date missing'
+const today = () => new Date().toISOString().slice(0, 10)
+
+function parseRoute() {
+  const hash = decodeURIComponent(location.hash.slice(1)) || 'dashboard'
+  if (hash.startsWith('stock/')) return { page: 'stock', id: hash.slice(6) }
+  if (hash.startsWith('fiscal/')) return { page: 'fiscal-detail', id: hash.slice(7) }
+  return { page: hash, id: '' }
+}
+
+export default function App() {
+  const auth = useAuth()
+  const market = useDseQuotes({ enabled: auth.status === 'signed_in' })
+  const portfolio = usePortfolio(auth.user)
+  const [route, setRoute] = useState(parseRoute)
+  const [trade, setTrade] = useState(null)
   const [actionError, setActionError] = useState('')
+  const [dashboardFiscal, setDashboardFiscal] = useState('')
+  const [isSigningIn, setIsSigningIn] = useState(false)
+  useEffect(() => { const update = () => setRoute(parseRoute()); addEventListener('hashchange', update); return () => removeEventListener('hashchange', update) }, [])
+  const navigate = (target) => { location.hash = target; window.scrollTo({ top: 0, behavior: 'smooth' }) }
 
-  const quoteCount = useMemo(() => Object.keys(quotes).length, [quotes])
-  const dseSymbols = useMemo(() => Object.keys(quotes).sort(), [quotes])
+  if (auth.status === 'loading') return <Loading title="Checking your session…" />
+  if (auth.status !== 'signed_in') return <AuthScreen authError={actionError || auth.error} isSigningIn={isSigningIn} configError={auth.isConfigured ? '' : `Missing Firebase config: ${missingFirebaseConfig.join(', ')}`} onSignIn={async () => { setIsSigningIn(true); setActionError(''); try { await auth.signIn() } catch { setActionError('Google sign-in did not complete.') } finally { setIsSigningIn(false) } }} />
 
-  const computedStocks = useMemo(
-    () =>
-      stocks.map((stock) => ({
-        ...stock,
-        ...calculateDerivedValues(stock),
-        ...enrichStockWithQuote(stock, quotes, { quotesAreStale: isDseStale }),
-      })),
-    [isDseStale, quotes, stocks],
-  )
+  const positions = buildPositions(portfolio.lots, market.quotes, market.isStale)
+  const years = fiscalYears(portfolio.transactions)
+  const activeFiscal = route.page === 'fiscal-detail' ? route.id : dashboardFiscal || years[0]
+  const summary = buildSummary(positions, portfolio.transactions, portfolio.lots, activeFiscal)
+  const pageTitle = route.page === 'stock' ? route.id : route.page === 'fiscal-detail' ? route.id : ({ dashboard: 'Dashboard', portfolio: 'Portfolio', transactions: 'Transactions', 'fiscal-years': 'Fiscal Years', migration: 'Needs Review' }[route.page] || 'Dashboard')
 
-  useEffect(() => {
-    if (!dseLastUpdated || dseLastUpdated === lastPersistedQuoteFetchRef.current || dseStatus === 'error') {
-      return
-    }
-
-    const quoteUpdates = stocks
-      .map((stock) => ({ ...stock, symbol: normalizeSymbol(stock.symbol) }))
-      .filter((stock) => stock.symbol && quotes[stock.symbol]?.ltp != null)
-      .filter((stock) => quotes[stock.symbol].ltp !== stock.lastQuote)
-      .map((stock) => ({
-        stockId: stock.id,
-        lastQuote: quotes[stock.symbol].ltp,
-      }))
-
-    if (quoteUpdates.length === 0) {
-      lastPersistedQuoteFetchRef.current = dseLastUpdated
-      return
-    }
-
-    lastPersistedQuoteFetchRef.current = dseLastUpdated
-
-    updateStockQuotes(quoteUpdates).catch((error) => {
-      console.error('Failed to persist cached DSE quotes.', error)
-    })
-  }, [dseLastUpdated, dseStatus, quotes, stocks, updateStockQuotes])
-
-  const stockFilterOptions = useMemo(() => {
-    return buildPortfolioSymbolOptions(computedStocks)
-  }, [computedStocks])
-
-  useEffect(() => {
-    if (selectedStockSymbol !== 'all' && !stockFilterOptions.includes(selectedStockSymbol)) {
-      setSelectedStockSymbol('all')
-    }
-  }, [selectedStockSymbol, stockFilterOptions])
-
-  const filteredStocks = useMemo(() => {
-    return filterPortfolioStocks(computedStocks, {
-      selectedSymbol: selectedStockSymbol,
-      selectedStatus,
-    })
-  }, [computedStocks, selectedStatus, selectedStockSymbol])
-
-  const summary = useMemo(() => {
-    return filteredStocks.reduce(
-      (accumulator, stock) => {
-        accumulator.totalStocks += Number(stock.quantity) || 0
-        accumulator.totalInvestment += stock.includingCommission * stock.quantity
-        accumulator.totalProfitLoss += stock.amount
-
-        if (stock.status === 'holding' && stock.marketValue != null) {
-          accumulator.totalMarketValue += stock.marketValue
-        }
-
-        if (stock.status === 'holding' && stock.unrealizedGain != null) {
-          accumulator.totalUnrealizedGain += stock.unrealizedGain
-        }
-
-        if (stock.status === 'holding' && stock.symbol && stock.ltp != null) {
-          accumulator.livePricedHoldings += 1
-        }
-
-        if (stock.status === 'holding' && stock.symbol && stock.ltp == null) {
-          accumulator.missingLivePriceHoldings += 1
-        }
-
-        if (stock.status === 'holding' && !stock.symbol) {
-          accumulator.missingSymbolHoldings += 1
-        }
-
-        return accumulator
-      },
-      {
-        totalStocks: 0,
-        totalInvestment: 0,
-        totalProfitLoss: 0,
-        totalMarketValue: 0,
-        totalUnrealizedGain: 0,
-        livePricedHoldings: 0,
-        missingLivePriceHoldings: 0,
-        missingSymbolHoldings: 0,
-      },
-    )
-  }, [filteredStocks])
-
-  const attachQuoteSnapshot = (values) => {
-    const symbol = values.symbol?.toUpperCase()
-    const quote = symbol ? quotes[symbol] : null
-
-    if (quote?.ltp == null) {
-      return values
-    }
-
-    return {
-      ...values,
-      lastQuote: quote.ltp,
-      quoteUpdatedAt: dseLastUpdated ?? new Date().toISOString(),
-    }
-  }
-
-  const activeStockLabel = selectedStockSymbol === 'all' ? 'All Stocks' : selectedStockSymbol
-  const activeStatusLabel =
-    selectedStatus === 'all'
-      ? 'All Statuses'
-      : STATUS_OPTIONS.find((status) => status.value === selectedStatus)?.label ?? 'All Statuses'
-  const activeFilterLabel = `${activeStockLabel} • ${activeStatusLabel}`
-
-  const handleAddStock = async (values) => {
-    setActionError('')
-    setIsSavingStock(true)
-
-    try {
-      await addStock(createStockPayload(attachQuoteSnapshot(values)))
-      setIsAddOpen(false)
-    } catch (error) {
-      console.error('Failed to add stock entry.', error)
-      setActionError('We could not save this stock entry. Please try again.')
-    } finally {
-      setIsSavingStock(false)
-    }
-  }
-
-  const handleUpdateStock = async (values) => {
-    if (!editingStock) {
-      return
-    }
-
-    setActionError('')
-    setIsSavingStock(true)
-
-    try {
-      await updateStock(editingStock.id, normalizeStockValues(attachQuoteSnapshot(values)))
-      setEditingStock(null)
-    } catch (error) {
-      console.error('Failed to update stock entry.', error)
-      setActionError('We could not update this stock entry. Please try again.')
-    } finally {
-      setIsSavingStock(false)
-    }
-  }
-
-  const handleDeleteStock = async () => {
-    if (!deletingStock) {
-      return
-    }
-
-    const shouldResetFilter =
-      selectedStockSymbol !== 'all' &&
-      normalizeSymbol(deletingStock.symbol) === selectedStockSymbol &&
-      filteredStocks.length === 1
-
-    setActionError('')
-    setIsDeletingStock(true)
-
-    try {
-      await deleteStock(deletingStock.id)
-
-      if (shouldResetFilter) {
-        setSelectedStockSymbol('all')
-      }
-
-      setDeletingStock(null)
-    } catch (error) {
-      console.error('Failed to delete stock entry.', error)
-      setActionError('We could not delete this stock entry. Please try again.')
-    } finally {
-      setIsDeletingStock(false)
-    }
-  }
-
-  const handleSignIn = async () => {
-    setActionError('')
-    setIsSigningIn(true)
-
-    try {
-      await signIn()
-    } catch (error) {
-      console.error('Failed to sign in.', error)
-      setActionError('Google sign-in did not complete. Please try again.')
-    } finally {
-      setIsSigningIn(false)
-    }
-  }
-
-  const handleSignOut = async () => {
-    setActionError('')
-
-    try {
-      await logOut()
-      setIsAddOpen(false)
-      setEditingStock(null)
-      setDeletingStock(null)
-      setSelectedStockSymbol('all')
-      setSelectedStatus('all')
-    } catch (error) {
-      console.error('Failed to sign out.', error)
-      setActionError('We could not sign you out right now. Please try again.')
-    }
-  }
-
-  if (authStatus === 'loading') {
-    return <StatusScreen title="Checking your session..." description="Verifying whether you are already signed in to your private dashboard." />
-  }
-
-  if (authStatus !== 'signed_in') {
-    return (
-      <AuthScreen
-        authError={actionError || authError}
-        isSigningIn={isSigningIn}
-        onSignIn={handleSignIn}
-        configError={
-          isConfigured
-            ? ''
-            : `Missing Firebase config: ${missingFirebaseConfig.join(', ')}`
-        }
-      />
-    )
-  }
-
-  const combinedError = actionError || stocksError
-
-  return (
-    <div className="app-shell">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-        <header className="relative overflow-hidden rounded-[32px] border border-white/10 bg-slate-950/50 px-6 py-8 shadow-glow sm:px-8 lg:px-10">
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-400/10 via-transparent to-emerald-400/10" />
-          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="mb-3 inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">
-                Stock Profit Tracker
-              </p>
-              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-                Track every stock position with private cloud access and instant profit insights.
-              </h1>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
-                Manage entries from a secure dashboard, search DSE trading codes as you type, and
-                keep everything stored in your own Firebase account.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:items-end">
-              <div className="text-sm text-slate-300 sm:text-right">
-                <p className="font-semibold text-white">{user.displayName || 'Signed In'}</p>
-                <p>{user.email}</p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddOpen(true)}
-                  className="action-button rounded-2xl bg-accent px-5 py-3 text-slate-950 shadow-lg shadow-sky-500/20 hover:bg-sky-300"
-                >
-                  Add Stock Entry
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="action-button rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-slate-100 hover:bg-white/10"
-                >
-                  Sign Out
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="mt-6 flex-1 space-y-6">
-          {combinedError ? (
-            <section className="rounded-2xl border border-red-400/20 bg-red-500/10 px-5 py-4 text-sm leading-6 text-red-100">
-              {combinedError}
-            </section>
-          ) : null}
-
-          {stocksStatus === 'loading' ? (
-            <StatusScreen
-              title="Loading private records..."
-              description="Fetching your stock entries from Firestore."
-              compact
-            />
-          ) : null}
-
-          <DseQuoteStatus
-            status={dseStatus}
-            error={dseError}
-            lastUpdated={dseLastUpdated}
-            isStale={isDseStale}
-            marketOpen={marketOpen}
-            quoteCount={quoteCount}
-            onRefresh={refreshDseQuotes}
-          />
-
-          <SummaryCards summary={summary} />
-
-          <section className="glass-panel overflow-hidden">
-            <div className="flex flex-col gap-3 border-b border-white/10 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Portfolio Entries</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Track buying cost, target selling price, and profit or loss per stock.
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 sm:items-end">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedStatus('all')}
-                    className={`rounded-full border px-3 py-1.5 uppercase tracking-wide transition ${
-                      selectedStatus === 'all'
-                        ? 'border-sky-400/40 bg-sky-400/15 text-sky-200'
-                        : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200'
-                    }`}
-                  >
-                    All
-                  </button>
-                  {STATUS_OPTIONS.map((status) => (
-                    <button
-                      type="button"
-                      key={status.value}
-                      onClick={() => setSelectedStatus(status.value)}
-                      className={`rounded-full border px-3 py-1.5 uppercase tracking-wide transition ${
-                        selectedStatus === status.value
-                          ? 'border-sky-400/40 bg-sky-400/15 text-sky-200'
-                          : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200'
-                      }`}
-                    >
-                      {status.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
-                  <label htmlFor="stock-filter" className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                    Filter View
-                  </label>
-                  <select
-                    id="stock-filter"
-                    value={selectedStockSymbol}
-                    onChange={(event) => setSelectedStockSymbol(event.target.value)}
-                    className="field-input min-w-[220px] py-2.5"
-                  >
-                    <option value="all">All Stocks</option>
-                    {stockFilterOptions.map((stockSymbol) => (
-                      <option key={stockSymbol} value={stockSymbol}>
-                        {stockSymbol}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-slate-400">
-                    Showing data for <span className="font-semibold text-white">{activeFilterLabel}</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <StockTable
-              stocks={filteredStocks}
-              activeFilterLabel={activeFilterLabel}
-              onEdit={setEditingStock}
-              onDelete={setDeletingStock}
-            />
-          </section>
-        </main>
-      </div>
-
-      <StockFormModal
-        isOpen={isAddOpen}
-        title="Add Stock Entry"
-        description="Create a new stock record by searching its DSE trading code, then preview the calculations before saving."
-        submitLabel="Save Stock"
-        initialValues={DEFAULT_FORM_VALUES}
-        symbolOptions={dseSymbols}
-        isSubmitting={isSavingStock}
-        onClose={() => setIsAddOpen(false)}
-        onSubmit={handleAddStock}
-      />
-
-      <StockFormModal
-        isOpen={Boolean(editingStock)}
-        title="Edit Stock Entry"
-        description="Update the values below and edit the DSE trading code if needed. Calculations refresh instantly while you type."
-        submitLabel="Update Stock"
-        initialValues={editingStock ?? DEFAULT_FORM_VALUES}
-        symbolOptions={dseSymbols}
-        isSubmitting={isSavingStock}
-        onClose={() => setEditingStock(null)}
-        onSubmit={handleUpdateStock}
-      />
-
-      <DeleteConfirmModal
-        isOpen={Boolean(deletingStock)}
-        stockName={deletingStock?.stockName}
-        onClose={() => setDeletingStock(null)}
-        onConfirm={handleDeleteStock}
-        isSubmitting={isDeletingStock}
-      />
+  return <div className="terminal-shell">
+    <Sidebar page={route.page} count={positions.length} reviews={portfolio.pendingReviews.length} navigate={navigate} />
+    <div className="terminal-workspace">
+      <header className="terminal-topbar"><div><p className="eyebrow">DSE Portfolio Terminal</p><h1>{pageTitle}</h1></div><div className="topbar-actions"><span className="market-state"><i />{market.isStale ? 'Cached prices' : 'DSE prices live'}</span><button className="btn buy" onClick={() => setTrade({ type: 'buy' })}>＋ Buy</button><button className="btn sell" onClick={() => setTrade({ type: 'sell' })} disabled={!positions.length}>− Sell</button><button className="avatar" title="Sign out" onClick={auth.logOut}>{(auth.user.displayName || auth.user.email || 'U').slice(0, 2).toUpperCase()}</button></div></header>
+      <main className="terminal-main">
+        {(actionError || portfolio.error) && <div className="alert">{actionError || portfolio.error}</div>}
+        {portfolio.status === 'loading' ? <Loading title="Loading your private portfolio…" compact /> : <>
+          {route.page === 'dashboard' && <Dashboard user={auth.user} summary={summary} positions={positions} transactions={portfolio.transactions} lots={portfolio.lots} fiscal={activeFiscal} years={years} onFiscal={setDashboardFiscal} navigate={navigate} refresh={market.refresh} setTrade={setTrade} />}
+          {route.page === 'portfolio' && <Portfolio positions={positions} navigate={navigate} setTrade={setTrade} />}
+          {route.page === 'stock' && <StockDetail symbol={route.id} positions={positions} lots={portfolio.lots} transactions={portfolio.transactions} quotes={market.quotes} fiscal={activeFiscal} navigate={navigate} setTrade={setTrade} />}
+          {route.page === 'transactions' && <Transactions transactions={portfolio.transactions} lots={portfolio.lots} years={years} navigate={navigate} setTrade={setTrade} />}
+          {route.page === 'fiscal-years' && <FiscalYears years={years} transactions={portfolio.transactions} lots={portfolio.lots} navigate={navigate} />}
+          {route.page === 'fiscal-detail' && <FiscalDetail fiscal={route.id} transactions={portfolio.transactions} lots={portfolio.lots} navigate={navigate} />}
+          {route.page === 'migration' && <MigrationInbox records={portfolio.pendingReviews} transactions={portfolio.transactions} onComplete={portfolio.completeMigrationDates} />}
+        </>}
+      </main>
     </div>
-  )
+    <TradeModal mode={trade} positions={positions} lots={portfolio.lots} symbols={Object.keys(market.quotes).sort()} quotes={market.quotes} onClose={() => setTrade(null)} onBuy={portfolio.recordBuy} onSell={portfolio.recordSell} onDone={(target) => { setTrade(null); navigate(target) }} setError={setActionError} />
+  </div>
 }
 
-function StatusScreen({ title, description, compact = false }) {
-  return (
-    <div className={compact ? 'glass-panel px-5 py-10 text-center' : 'app-shell'}>
-      <div
-        className={
-          compact
-            ? 'mx-auto max-w-xl'
-            : 'mx-auto flex min-h-screen w-full max-w-3xl items-center px-4 py-8 sm:px-6 lg:px-8'
-        }
-      >
-        <div className={compact ? 'w-full' : 'glass-panel w-full p-8 text-center'}>
-          <div className="mx-auto h-12 w-12 animate-pulse rounded-full border border-sky-400/30 bg-sky-400/10" />
-          <h2 className="mt-5 text-2xl font-bold text-white">{title}</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">{description}</p>
-        </div>
-      </div>
-    </div>
-  )
+function Sidebar({ page, count, reviews, navigate }) {
+  const active = page === 'stock' ? 'portfolio' : page === 'fiscal-detail' ? 'fiscal-years' : page
+  const links = [['dashboard', '▦', 'Dashboard'], ['portfolio', '◫', 'Portfolio'], ['transactions', '⇄', 'Transactions'], ['fiscal-years', '▤', 'Fiscal Years'], ['migration', '!', 'Needs Review']]
+  return <><aside className="terminal-sidebar"><div className="brand"><span>DT</span><div><strong>DSE Terminal</strong><small>Private portfolio</small></div></div><p className="nav-label">Workspace</p><nav>{links.map(([id, icon, label]) => <button key={id} className={active === id ? 'active' : ''} onClick={() => navigate(id)}><span>{icon}</span>{label}{id === 'portfolio' && <b>{count}</b>}{id === 'migration' && reviews > 0 && <b className="review-count">{reviews}</b>}</button>)}</nav></aside><nav className="mobile-nav">{links.slice(0, 4).map(([id, icon, label]) => <button key={id} className={active === id ? 'active' : ''} onClick={() => navigate(id)}><span>{icon}</span>{label}</button>)}</nav></>
 }
 
-export default App
+function Dashboard({ user, summary, positions, transactions, lots, fiscal, years, onFiscal, navigate, refresh, setTrade }) {
+  return <div className="page-stack"><PageHeader eyebrow="Portfolio overview" title={`Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, ${(user.displayName || 'Investor').split(' ')[0]}`} text="Current holdings and realized performance for the selected Bangladesh fiscal year." actions={<><select className="input" value={fiscal} onChange={(e) => onFiscal(e.target.value)}>{years.map((year) => <option key={year}>{year}</option>)}</select><button className="btn" onClick={refresh}>↻ Refresh prices</button></>} />
+    <Metrics items={[['Current Cost Basis', money(summary.cost), 'Capital remaining in open lots'], ['Current Market Value', money(summary.marketValue), 'Latest available DSE prices'], ['Unrealized P/L', money(summary.unrealized), `${percent(summary.unrealizedPct)} after estimated sell fee`, summary.unrealized], [`${fiscal} Realized P/L`, money(summary.fiscalRealized), 'Completed dated sales', summary.fiscalRealized], ['Invested This FY', money(summary.fiscalInvestment), 'Buy value including commission'], ['Lifetime Realized P/L', money(summary.lifetimeRealized), 'All recorded sales', summary.lifetimeRealized]]} />
+    <section className="panel"><PanelHeader title="Open Positions" subtitle={`${positions.length} active stocks • specific-lot cost basis`} action={<button className="btn small" onClick={() => navigate('portfolio')}>View portfolio</button>} /><PositionTable positions={positions} navigate={navigate} setTrade={setTrade} /></section>
+    <section className="panel"><PanelHeader title="Recent Activity" subtitle="Latest five transactions" /><TransactionTable transactions={[...transactions].sort(sortTransactions).slice(0, 5)} lots={lots} navigate={navigate} /></section>
+  </div>
+}
+
+function Portfolio({ positions, navigate, setTrade }) {
+  const [search, setSearch] = useState(''), [pl, setPl] = useState('all'), [sort, setSort] = useState('market')
+  const shown = positions.filter((p) => p.symbol.includes(search.toUpperCase())).filter((p) => pl === 'all' || (pl === 'profit' ? p.unrealized >= 0 : p.unrealized < 0)).sort((a, b) => sort === 'symbol' ? a.symbol.localeCompare(b.symbol) : sort === 'return' ? (b.returnPct || 0) - (a.returnPct || 0) : (b.marketValue || 0) - (a.marketValue || 0))
+  return <div className="page-stack"><PageHeader eyebrow="Current holdings" title="Portfolio" text="Aggregated open positions. Sales use exact purchase-lot selection." actions={<button className="btn buy" onClick={() => setTrade({ type: 'buy' })}>＋ Buy Stock</button>} /><section className="panel"><div className="filters"><input className="input" placeholder="Search symbol" value={search} onChange={(e) => setSearch(e.target.value)} /><select className="input" value={pl} onChange={(e) => setPl(e.target.value)}><option value="all">Profit & loss</option><option value="profit">Profit only</option><option value="loss">Loss only</option></select><select className="input" value={sort} onChange={(e) => setSort(e.target.value)}><option value="market">Sort: Market value</option><option value="return">Sort: Return %</option><option value="symbol">Sort: Symbol</option></select></div><PositionTable positions={shown} navigate={navigate} setTrade={setTrade} /></section></div>
+}
+
+function StockDetail({ symbol, positions, lots, transactions, quotes, fiscal, navigate, setTrade }) {
+  const position = positions.find((item) => item.symbol === symbol), openLots = lots.filter((lot) => lot.symbol === symbol && lot.remainingQty > 0), txs = transactions.filter((tx) => tx.symbol === symbol).sort(sortTransactions), quote = quotes[symbol]
+  if (!position && !txs.length) return <Empty title="Stock not found" text="This stock is not present in your portfolio." />
+  const lotsById = Object.fromEntries(lots.map((lot) => [lot.id, lot]))
+  const fy = txs.filter((tx) => tx.type === 'sell' && inFiscalYear(tx.date, fiscal)).reduce((s, tx) => s + realizedProfit(tx, lotsById), 0)
+  return <div className="page-stack"><button className="back" onClick={() => navigate('portfolio')}>← Back to Portfolio</button><section className="panel stock-hero"><div><p className="eyebrow">Stock position</p><h2>{symbol}</h2><strong className="hero-price">{quote?.ltp == null ? 'Price unavailable' : money(quote.ltp)}</strong><p className={quote?.change >= 0 ? 'positive' : 'negative'}>{quote?.change == null ? 'No live change' : `${quote.change >= 0 ? '▲' : '▼'} ${money(quote.change)}`}</p></div><div className="header-actions"><button className="btn buy" onClick={() => setTrade({ type: 'buy', symbol })}>＋ Buy More</button>{position && <button className="btn sell" onClick={() => setTrade({ type: 'sell', symbol })}>− Sell Shares</button>}</div></section>{position && <Metrics items={[['Open Quantity', number(position.quantity), `${openLots.length} purchase lots`], ['Cost Basis', money(position.cost), 'Remaining acquisition cost'], ['Market Value', money(position.marketValue), 'Gross current value'], ['Unrealized P/L', money(position.unrealized), percent(position.returnPct), position.unrealized], [`${fiscal} Realized`, money(fy), 'Completed sales', fy]]} />}
+    <section className="panel"><PanelHeader title="Open Purchase Lots" subtitle="Exact lots available for future sales" /><div className="table-wrap"><table><thead><tr><th>Purchase date</th><th>Price</th><th>Original</th><th>Remaining</th><th>Source</th><th /></tr></thead><tbody>{openLots.map((lot) => <tr key={lot.id}><td>{prettyDate(lot.purchaseDate)}</td><td>{money(lot.price)}</td><td>{number(lot.originalQty)}</td><td>{number(lot.remainingQty)}</td><td><Pill>{lot.source}</Pill></td><td><button className="btn small sell" onClick={() => setTrade({ type: 'sell', symbol, lotId: lot.id })}>Sell lot</button></td></tr>)}</tbody></table></div></section>
+    <section className="panel"><PanelHeader title="Transaction History" subtitle={`All buys and sells for ${symbol}`} /><TransactionTable transactions={txs} lots={lots} navigate={navigate} /></section></div>
+}
+
+function Transactions({ transactions, lots, years, navigate, setTrade }) {
+  const [search, setSearch] = useState(''), [type, setType] = useState('all'), [fy, setFy] = useState('all')
+  const shown = [...transactions].sort(sortTransactions).filter((tx) => tx.symbol.includes(search.toUpperCase())).filter((tx) => type === 'all' || tx.type === type).filter((tx) => fy === 'all' || inFiscalYear(tx.date, fy))
+  return <div className="page-stack"><PageHeader eyebrow="Audit ledger" title="Transactions" text="Every buy and sell, including commission and exact realized profit." actions={<><button className="btn buy" onClick={() => setTrade({ type: 'buy' })}>＋ Record Buy</button><button className="btn sell" onClick={() => setTrade({ type: 'sell' })}>− Record Sell</button></>} /><section className="panel"><div className="filters"><input className="input" placeholder="Search symbol" value={search} onChange={(e) => setSearch(e.target.value)} /><select className="input" value={type} onChange={(e) => setType(e.target.value)}><option value="all">All transaction types</option><option value="buy">Buy only</option><option value="sell">Sell only</option></select><select className="input" value={fy} onChange={(e) => setFy(e.target.value)}><option value="all">All fiscal years</option>{years.map((year) => <option key={year}>{year}</option>)}</select></div><TransactionTable transactions={shown} lots={lots} navigate={navigate} /></section></div>
+}
+
+function FiscalYears({ years, transactions, lots, navigate }) {
+  const lotsById = Object.fromEntries(lots.map((lot) => [lot.id, lot]))
+  return <div className="page-stack"><PageHeader eyebrow="Year-over-year accounting" title="Fiscal Years" text="Bangladesh fiscal years run from July 1 through June 30. Undated migrated records are excluded." /><div className="fiscal-grid">{years.map((year) => { const txs = transactions.filter((tx) => inFiscalYear(tx.date, year)); const realized = txs.filter((tx) => tx.type === 'sell').reduce((s, tx) => s + realizedProfit(tx, lotsById), 0); return <button className="fiscal-card" key={year} onClick={() => navigate(`fiscal/${encodeURIComponent(year)}`)}><p className="eyebrow">Fiscal report</p><h2>{year}</h2><strong className={realized >= 0 ? 'positive' : 'negative'}>{money(realized)}</strong><span>Realized profit / loss</span><div><b>{txs.length}</b> transactions</div></button> })}</div></div>
+}
+
+function FiscalDetail({ fiscal, transactions, lots, navigate }) {
+  const txs = transactions.filter((tx) => inFiscalYear(tx.date, fiscal)).sort(sortTransactions), lotsById = Object.fromEntries(lots.map((lot) => [lot.id, lot]))
+  const buys = txs.filter((tx) => tx.type === 'buy'), sells = txs.filter((tx) => tx.type === 'sell')
+  const values = { investment: buys.reduce((s, tx) => s + netAmount(tx), 0), grossSales: sells.reduce((s, tx) => s + grossAmount(tx), 0), netSales: sells.reduce((s, tx) => s + netAmount(tx), 0), fees: txs.reduce((s, tx) => s + commission(tx), 0), realized: sells.reduce((s, tx) => s + realizedProfit(tx, lotsById), 0) }
+  const perStock = [...new Set(txs.map((tx) => tx.symbol))].map((symbol) => { const stockTx = txs.filter((tx) => tx.symbol === symbol); return { symbol, bought: stockTx.filter((tx) => tx.type === 'buy').reduce((s, tx) => s + Number(tx.quantity), 0), buyCost: stockTx.filter((tx) => tx.type === 'buy').reduce((s, tx) => s + netAmount(tx), 0), sold: stockTx.filter((tx) => tx.type === 'sell').reduce((s, tx) => s + Number(tx.quantity), 0), proceeds: stockTx.filter((tx) => tx.type === 'sell').reduce((s, tx) => s + netAmount(tx), 0), realized: stockTx.filter((tx) => tx.type === 'sell').reduce((s, tx) => s + realizedProfit(tx, lotsById), 0) } })
+  return <div className="page-stack"><button className="back" onClick={() => navigate('fiscal-years')}>← Back to Fiscal Years</button><PageHeader eyebrow="Fiscal-year report" title={fiscal} text="Dated transactions from July 1 through June 30." /><Metrics items={[['Buy Investment', money(values.investment), 'Including commission'], ['Gross Sale Value', money(values.grossSales), 'Before sell commission'], ['Net Sale Proceeds', money(values.netSales), 'After sell commission'], ['Total Commission', money(values.fees), 'Buy and sell commission'], ['Realized P/L', money(values.realized), 'Assigned by sale date', values.realized], ['Transactions', txs.length, 'Buys and sells']]} /><section className="panel"><PanelHeader title="Per-Stock Results" subtitle={`Trading activity during ${fiscal}`} /><div className="table-wrap"><table><thead><tr><th>Symbol</th><th>Bought Qty</th><th>Buy Cost</th><th>Sold Qty</th><th>Net Proceeds</th><th>Realized P/L</th></tr></thead><tbody>{perStock.map((item) => <tr key={item.symbol}><td><button className="symbol-link" onClick={() => navigate(`stock/${item.symbol}`)}>{item.symbol}</button></td><td>{number(item.bought)}</td><td>{money(item.buyCost)}</td><td>{number(item.sold)}</td><td>{money(item.proceeds)}</td><td className={item.realized >= 0 ? 'positive' : 'negative'}>{money(item.realized)}</td></tr>)}</tbody></table></div></section><section className="panel"><PanelHeader title="Fiscal-Year Transactions" subtitle="Complete transaction list" /><TransactionTable transactions={txs} lots={lots} navigate={navigate} /></section></div>
+}
+
+function MigrationInbox({ records, transactions, onComplete }) {
+  if (!records.length) return <div className="page-stack"><PageHeader eyebrow="Data migration" title="Needs Review" text="All migrated records have complete dates." /><Empty title="You're all caught up" text="There are no migrated entries waiting for dates." /></div>
+  return <div className="page-stack"><PageHeader eyebrow="Data migration" title="Needs Review" text="Add historical dates when convenient. Until then, these records stay out of fiscal reports." />{records.map((record) => <ReviewCard key={record.id} record={record} sold={transactions.some((tx) => tx.id === `legacy-${record.id}-sell`)} onComplete={onComplete} />)}</div>
+}
+
+function ReviewCard({ record, sold, onComplete }) {
+  const [buyDate, setBuyDate] = useState(''), [sellDate, setSellDate] = useState(''), [saving, setSaving] = useState(false)
+  return <section className="panel review-card"><div><Pill>Migrated</Pill><h2>{record.symbol || record.stockName}</h2><p>{number(record.quantity)} shares • Buy {money(record.buyingPrice)}{sold ? ` • Sold ${money(record.soldPrice)}` : ''}</p></div><div className="review-fields"><label>Purchase date<input className="input" type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} /></label>{sold && <label>Sale date<input className="input" type="date" min={buyDate} value={sellDate} onChange={(e) => setSellDate(e.target.value)} /></label>}<button className="btn buy" disabled={!buyDate || (sold && !sellDate) || saving} onClick={async () => { setSaving(true); await onComplete(record.id, buyDate, sellDate); setSaving(false) }}>{saving ? 'Saving…' : 'Complete review'}</button></div></section>
+}
+
+function TradeModal({ mode, positions, lots, symbols, quotes, onClose, onBuy, onSell, onDone, setError }) {
+  const [form, setForm] = useState({ symbol: '', date: today(), quantity: 100, price: '' }), [step, setStep] = useState(1), [allocations, setAllocations] = useState({}), [saving, setSaving] = useState(false)
+  useEffect(() => { if (!mode) return; const symbol = mode.symbol || (mode.type === 'sell' ? positions[0]?.symbol : symbols[0]) || ''; const qty = mode.lotId ? Math.min(100, lots.find((lot) => lot.id === mode.lotId)?.remainingQty || 100) : 100; setForm({ symbol, date: today(), quantity: qty, price: quotes[symbol]?.ltp ?? '' }); setAllocations(mode.lotId ? { [mode.lotId]: qty } : {}); setStep(1) }, [mode])
+  if (!mode) return null
+  const selling = mode.type === 'sell', availableLots = lots.filter((lot) => lot.symbol === form.symbol && lot.remainingQty > 0), available = availableLots.reduce((s, lot) => s + Number(lot.remainingQty), 0), tx = { type: mode.type, quantity: form.quantity, price: form.price }, selected = Object.values(allocations).reduce((s, qty) => s + Number(qty || 0), 0), lotsById = Object.fromEntries(lots.map((lot) => [lot.id, lot])), reviewTx = { ...tx, allocations: Object.entries(allocations).filter(([, qty]) => qty > 0).map(([lotId, quantity]) => ({ lotId, quantity: Number(quantity) })) }, valid = form.symbol && form.date && Number(form.quantity) > 0 && Number(form.price) > 0 && (!selling || Number(form.quantity) <= available)
+  const submit = async () => { setSaving(true); setError(''); try { if (selling) { await onSell({ ...form, allocations: reviewTx.allocations }); onDone('transactions') } else { await onBuy(form); onDone(`stock/${form.symbol}`) } } catch (error) { setError(error.message || 'The transaction could not be saved.') } finally { setSaving(false) } }
+  return <Modal isOpen title={selling ? 'Record Sell Transaction' : 'Record Buy Transaction'} description={selling ? 'Allocate the exact shares sold against their purchase lots.' : 'A new purchase lot will be created for this transaction.'} onClose={onClose} footer={<div className="modal-actions">{step > 1 && <button className="btn" onClick={() => setStep(step - 1)}>Back</button>}<button className="btn" onClick={onClose}>Cancel</button>{(!selling || step === 3) ? <button className="btn buy" disabled={!valid || saving || (selling && selected !== Number(form.quantity))} onClick={submit}>{saving ? 'Saving…' : selling ? 'Record Sale' : 'Record Buy'}</button> : <button className="btn buy" disabled={!valid || (step === 2 && selected !== Number(form.quantity))} onClick={() => setStep(step + 1)}>{step === 1 ? 'Select Purchase Lots' : 'Review Sale'}</button>}</div>}>
+    {selling && <div className="steps"><span className={step >= 1 ? 'active' : ''}>1 Details</span><span className={step >= 2 ? 'active' : ''}>2 Lots</span><span className={step >= 3 ? 'active' : ''}>3 Review</span></div>}
+    {step === 1 && <div className="form-grid"><label>Stock<select className="input" value={form.symbol} onChange={(e) => { const symbol = e.target.value; setForm({ ...form, symbol, price: quotes[symbol]?.ltp ?? '' }); setAllocations({}) }}>{(selling ? positions.map((p) => p.symbol) : symbols).map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>Trade date<input className="input" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label><label>Quantity<input className="input" type="number" min="1" max={selling ? available : undefined} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /><small>{selling ? `${number(available)} shares available` : ''}</small></label><label>Price per share<input className="input" type="number" min="0.01" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></label><Calculation tx={tx} /></div>}
+    {selling && step === 2 && <div><p className="allocation-note">Allocate {number(form.quantity)} shares. Selected: <b>{number(selected)}</b></p><div className="lot-list">{availableLots.map((lot) => <label key={lot.id}><span><b>{prettyDate(lot.purchaseDate)}</b><small>{money(lot.price)} • {number(lot.remainingQty)} available</small></span><input className="input" type="number" min="0" max={lot.remainingQty} value={allocations[lot.id] || 0} onChange={(e) => setAllocations({ ...allocations, [lot.id]: Math.min(Number(e.target.value), lot.remainingQty) })} /></label>)}</div></div>}
+    {selling && step === 3 && <div className="review-grid"><Calculation tx={tx} /><div className="calculation"><p><span>Selected lots</span><b>{reviewTx.allocations.length}</b></p><p><span>Allocated shares</span><b>{number(selected)}</b></p><p className="total"><span>Realized P/L</span><b>{money(realizedProfit(reviewTx, lotsById))}</b></p></div></div>}
+  </Modal>
+}
+
+function Calculation({ tx }) { return <div className="calculation"><p><span>Gross amount</span><b>{money(grossAmount(tx))}</b></p><p><span>{tx.type === 'sell' ? 'Sell' : 'Buy'} commission (0.04%)</span><b>{money(commission(tx))}</b></p><p className="total"><span>{tx.type === 'sell' ? 'Net proceeds' : 'Total acquisition cost'}</span><b>{money(netAmount(tx))}</b></p></div> }
+function PositionTable({ positions, navigate, setTrade }) { if (!positions.length) return <Empty title="No open positions" text="Record a buy transaction to create your first purchase lot." />; return <div className="table-wrap"><table><thead><tr><th>Symbol</th><th>LTP</th><th>Day</th><th>Quantity</th><th>Lots</th><th>Cost Basis</th><th>Market Value</th><th>Unrealized P/L</th><th>Return</th><th /></tr></thead><tbody>{positions.map((p) => <tr key={p.symbol}><td><button className="symbol-link" onClick={() => navigate(`stock/${p.symbol}`)}>{p.symbol}</button></td><td>{p.ltp == null ? '—' : money(p.ltp)}</td><td className={p.dayChange >= 0 ? 'positive' : 'negative'}>{p.dayChange == null ? '—' : money(p.dayChange)}</td><td>{number(p.quantity)}</td><td>{p.lots}</td><td>{money(p.cost)}</td><td>{p.marketValue == null ? '—' : money(p.marketValue)}</td><td className={p.unrealized >= 0 ? 'positive' : 'negative'}>{p.unrealized == null ? '—' : money(p.unrealized)}</td><td>{p.returnPct == null ? '—' : percent(p.returnPct)}</td><td><button className="btn small sell" onClick={() => setTrade({ type: 'sell', symbol: p.symbol })}>Sell</button></td></tr>)}</tbody></table></div> }
+function TransactionTable({ transactions, lots, navigate }) { const byId = Object.fromEntries(lots.map((lot) => [lot.id, lot])); if (!transactions.length) return <Empty title="No matching transactions" text="Record a buy or adjust the filters." />; return <div className="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Quantity</th><th>Price</th><th>Gross</th><th>Commission</th><th>Net</th><th>Realized P/L</th><th>Source</th></tr></thead><tbody>{transactions.map((tx) => { const pl = realizedProfit(tx, byId); return <tr key={tx.id}><td className={!tx.date ? 'warning' : ''}>{prettyDate(tx.date)}</td><td><Pill type={tx.type}>{tx.type}</Pill></td><td><button className="symbol-link" onClick={() => navigate(`stock/${tx.symbol}`)}>{tx.symbol}</button></td><td>{number(tx.quantity)}</td><td>{money(tx.price)}</td><td>{money(grossAmount(tx))}</td><td>{money(commission(tx))}</td><td>{money(netAmount(tx))}</td><td className={pl == null ? '' : pl >= 0 ? 'positive' : 'negative'}>{pl == null ? '—' : money(pl)}</td><td><Pill>{tx.source}</Pill></td></tr> })}</tbody></table></div> }
+function Metrics({ items }) { return <div className="metrics">{items.map(([label, value, note, tone]) => <article className="metric" key={label}><span>{label}</span><strong className={tone == null ? '' : tone >= 0 ? 'positive' : 'negative'}>{value}</strong><small>{note}</small></article>)}</div> }
+function PageHeader({ eyebrow, title, text, actions }) { return <header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2><p>{text}</p></div>{actions && <div className="header-actions">{actions}</div>}</header> }
+function PanelHeader({ title, subtitle, action }) { return <div className="panel-header"><div><h3>{title}</h3><p>{subtitle}</p></div>{action}</div> }
+function Pill({ children, type }) { return <span className={`pill ${type || ''}`}>{String(children).toUpperCase()}</span> }
+function Empty({ title, text }) { return <div className="empty"><h3>{title}</h3><p>{text}</p></div> }
+function Loading({ title, compact }) { return <div className={compact ? 'loading compact' : 'app-shell loading'}><i /><h2>{title}</h2></div> }
+function sortTransactions(a, b) { if (!a.date && !b.date) return String(b.createdAt).localeCompare(String(a.createdAt)); if (!a.date) return 1; if (!b.date) return -1; return b.date.localeCompare(a.date) }
