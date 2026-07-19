@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 function Modal({ isOpen, title, description, children, footer, onClose }) {
+  const closeRef = useRef(null)
   useEffect(() => {
     if (!isOpen) {
       return undefined
@@ -12,8 +13,11 @@ function Modal({ isOpen, title, description, children, footer, onClose }) {
       }
     }
 
+    const previous = document.activeElement
+    document.body.style.overflow = 'hidden'
+    closeRef.current?.focus()
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => { window.removeEventListener('keydown', handleKeyDown); document.body.style.overflow = ''; previous?.focus?.() }
   }, [isOpen, onClose])
 
   if (!isOpen) {
@@ -21,34 +25,35 @@ function Modal({ isOpen, title, description, children, footer, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-4 backdrop-blur-sm sm:items-center">
+    <div className="modal-backdrop" role="presentation">
       <div
         className="absolute inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      <div className="glass-panel relative z-10 w-full max-w-2xl overflow-hidden">
-        <div className="border-b border-white/10 px-5 py-4 sm:px-6">
-          <div className="flex items-start justify-between gap-4">
+      <div className="modal-window" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div className="modal-header">
+          <div className="modal-heading">
             <div>
-              <h3 className="text-xl font-semibold text-white">{title}</h3>
-              {description ? <p className="mt-1 text-sm text-slate-400">{description}</p> : null}
+              <h3 id="modal-title">{title}</h3>
+              {description ? <p>{description}</p> : null}
             </div>
             <button
               type="button"
+              ref={closeRef}
               onClick={onClose}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
+              className="modal-close"
             >
               Close
             </button>
           </div>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+        <div className="modal-body">{children}</div>
 
         {footer ? (
-          <div className="border-t border-white/10 px-5 py-4 sm:px-6">{footer}</div>
+          <div className="modal-footer">{footer}</div>
         ) : null}
       </div>
     </div>
