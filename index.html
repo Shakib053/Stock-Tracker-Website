@@ -3,13 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08101c" />
+    <meta name="color-scheme" content="light dark" />
     <title>Stock Profit Tracker</title>
     <meta
       name="description"
       content="Track stock entries, calculate commissions, and monitor profit or loss from a modern dashboard."
     />
+    <script>
+      (() => {
+        const saved = localStorage.getItem('dse-theme-preference')
+        const preference = ['system', 'light', 'dark'].includes(saved) ? saved : 'system'
+        const resolved = preference === 'system'
+          ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : preference
+        document.documentElement.dataset.theme = resolved
+        document.documentElement.dataset.themePreference = preference
+        document.documentElement.style.colorScheme = resolved
+        document.querySelector('meta[name="theme-color"]').content = resolved === 'dark' ? '#08101c' : '#f3f6fb'
+      })()
+    </script>
   </head>
-  <body class="bg-app text-slate-100">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
