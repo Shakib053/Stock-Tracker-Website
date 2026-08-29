@@ -121,6 +121,109 @@ export function usePortfolio(user) {
     })
   }
 
+  const updateTransaction = async (oldTx, updatedFields) => {
+    const now = new Date().toISOString()
+    
+    if (oldTx.type === 'buy') {
+      const { date, quantity, price } = updatedFields
+      const newQty = Number(quantity)
+      const newPrice = Number(price)
+      
+      await runTransaction(db, async (fireTx) => {
+        const lotQuery = lots.find(l => l.buyTransactionId === oldTx.id)
+        if (!lotQuery) throw new Error('Associated purchase lot not found.')
+        
+        const lotRef = doc(path(user.uid, 'lots'), lotQuery.id)
+        const lotDoc = await fireTx.get(lotRef)
+        if (!lotDoc.exists()) throw new Error('Purchase lot no longer exists.')
+        
+        const lotData = lotDoc.data()
+        const soldQty = Number(lotData.originalQty) - Number(lotData.remainingQty)
+        if (newQty < soldQty) {
+          throw new Error(`Cannot reduce quantity below ${soldQty} as these shares have already been sold.`)
+        }
+        
+        const remainingDiff = newQty - Number(lotData.originalQty)
+        const newRemainingQty = Number(lotData.remainingQty) + remainingDiff
+        
+        fireTx.update(doc(path(user.uid, 'transactions'), oldTx.id), {
+          date,
+          quantity: newQty,
+          price: newPrice,
+          updatedAt: now
+        })
+        
+        fireTx.update(lotRef, {
+          purchaseDate: date,
+          originalQty: newQty,
+          remainingQty: newRemainingQty,
+          price: newPrice,
+          updatedAt: now
+        })
+      })
+    } else if (oldTx.type === 'sell') {
+      const { date, quantity, price, allocations } = updatedFields
+      const newQty = Number(quantity)
+      const newPrice = Number(price)
+      
+      await runTransaction(db, async (fireTx) => {
+        const oldAllocations = oldTx.allocations || []
+        const lotRefsMap = new Map()
+        
+        for (const alloc of oldAllocations) {
+          const ref = doc(path(user.uid, 'lots'), alloc.lotId)
+          lotRefsMap.set(alloc.lotId, ref)
+        }
+        for (const alloc of allocations) {
+          if (!lotRefsMap.has(alloc.lotId)) {
+            lotRefsMap.set(alloc.lotId, doc(path(user.uid, 'lots'), alloc.lotId))
+          }
+        }
+        
+        const uniqueRefs = Array.from(lotRefsMap.values())
+        const snapshots = await Promise.all(uniqueRefs.map(ref => fireTx.get(ref)))
+        const lotDataMap = {}
+        
+        snapshots.forEach((snap, idx) => {
+          if (!snap.exists()) throw new Error('One of the purchase lots no longer exists.')
+          lotDataMap[snap.id] = {
+            ref: uniqueRefs[idx],
+            remainingQty: Number(snap.data().remainingQty || 0)
+          }
+        })
+        
+        for (const alloc of oldAllocations) {
+          if (lotDataMap[alloc.lotId]) {
+            lotDataMap[alloc.lotId].remainingQty += Number(alloc.quantity)
+          }
+        }
+        
+        for (const alloc of allocations) {
+          const requested = Number(alloc.quantity)
+          if (!lotDataMap[alloc.lotId] || requested > lotDataMap[alloc.lotId].remainingQty) {
+            throw new Error('A selected purchase lot does not have enough shares.')
+          }
+          lotDataMap[alloc.lotId].remainingQty -= requested
+        }
+        
+        for (const lotId in lotDataMap) {
+          fireTx.update(lotDataMap[lotId].ref, {
+            remainingQty: lotDataMap[lotId].remainingQty,
+            updatedAt: now
+          })
+        }
+        
+        fireTx.update(doc(path(user.uid, 'transactions'), oldTx.id), {
+          date,
+          quantity: newQty,
+          price: newPrice,
+          allocations,
+          updatedAt: now
+        })
+      })
+    }
+  }
+
   const pendingReviews = useMemo(() => legacyStocks.filter((stock) => stock.migrationVersion && !stock.migrationReviewedAt), [legacyStocks])
-  return { transactions, lots, pendingReviews, status, error, recordBuy, recordSell, deleteTransaction, completeMigrationDates }
+  return { transactions, lots, pendingReviews, status, error, recordBuy, recordSell, updateTransaction, deleteTransaction, completeMigrationDates }
 }
